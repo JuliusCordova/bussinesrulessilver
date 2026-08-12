@@ -303,6 +303,33 @@ pre {
   padding: 18px;
 }
 
+.validationBox {
+  background: #fff;
+  border: 1px solid #e2dcd2;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  margin: 0 0 24px;
+  padding: 16px;
+}
+
+.validationBox span {
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 10px 12px;
+}
+
+.checkOk {
+  background: #e8f8ef;
+  color: #0a7a43;
+}
+
+.checkFail {
+  background: #ffefeb;
+  color: #ff2d22;
+}
+
 .sectionHeader {
   align-items: center;
   display: flex;

@@ -9,12 +9,6 @@ export type BackendTransformationType =
   | 'DATE_PARSE'
   | 'EXCLUDE';
 
-export interface BackendTransformation {
-  type: BackendTransformationType;
-  expression?: string;
-  parameters?: Record<string, unknown>;
-}
-
 const transformationAliases: Record<string, BackendTransformationType> = {
   DIRECT: 'DIRECT',
   DIRECT_COPY: 'DIRECT',
@@ -37,8 +31,6 @@ const transformationAliases: Record<string, BackendTransformationType> = {
 
 export function toBackendTransformation(
   uiTransformationType: string,
-  expression?: string,
-): BackendTransformation {
-  const type = transformationAliases[uiTransformationType.toUpperCase()] ?? 'DIRECT';
-  return expression ? { type, expression } : { type };
+): BackendTransformationType {
+  return transformationAliases[uiTransformationType.toUpperCase()] ?? 'DIRECT';
 }

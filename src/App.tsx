@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { demoWorkflowPatch, silverApi, type CatalogTableDetail, type SilverWorkflowRecord } from './api';
 import { businessRules, mappingRules, seedColumns, seedSource } from './seed';
 import type { CatalogField, StepId, WorkflowState } from './types';
@@ -153,6 +153,12 @@ export function App() {
                     source_project: workflow.projectId ?? seedSource.projectId,
                     source_dataset: workflow.sourceDataset ?? seedSource.sourceDataset,
                     source_table: workflow.sourceTable ?? seedSource.sourceTable,
+                    columns: seedColumns.map((column) => ({
+                      name: column.name,
+                      type: column.type,
+                      mode: column.usage === 'business_key' ? 'REQUIRED' : 'NULLABLE',
+                      usage: column.usage,
+                    })),
                     business_key_candidates: [seedSource.businessKey],
                     watermark_candidates: [seedSource.watermark],
                     metric_candidates: [seedSource.metric],
@@ -419,6 +425,8 @@ function SourceStep({
     tableDetail?.table?.fields ??
     tableDetail?.table?.columns;
 
+  const sourceColumns = schemaFields?.length ? schemaFields : seedColumns;
+
   function normalizeList(value: unknown, preferredKeys: string[]) {
     const list = Array.isArray(value)
       ? value
@@ -451,6 +459,8 @@ function SourceStep({
       const names = normalizeList(response, ['dataset_id', 'datasetId', 'id', 'name']);
       setDatasets(names);
       setCatalogStatus(`Datasets cargados: ${names.length}`);
+      if (sourceDataset) void loadTables(sourceDataset);
+      if (targetDataset && targetDataset !== sourceDataset) void loadTables(targetDataset, true);
     } catch (error) {
       setCatalogStatus(`No se pudo consultar catalogo real: ${(error as Error).message}`);
     } finally {
@@ -487,6 +497,10 @@ function SourceStep({
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    void loadDatasets();
+  }, []);
 
   function resetSeed() {
     setProjectId(seedSource.projectId);
@@ -575,7 +589,7 @@ function SourceStep({
           <button onClick={resetSeed}>Cargar semilla</button>
         </div>
       </article>
-      <SchemaPreview fields={schemaFields} />
+      <SchemaPreview fields={sourceColumns} />
     </section>
   );
 }

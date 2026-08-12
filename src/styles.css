@@ -1,0 +1,404 @@
+:root {
+  color: #11100f;
+  background: #f7f6f4;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  border: 1px solid #e2dcd2;
+  background: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 40px;
+  padding: 0 16px;
+}
+
+.primary {
+  background: #ff2d22;
+  border-color: #ff2d22;
+  color: #fff;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: #fff;
+  border-right: 1px solid #e2dcd2;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 32px 16px;
+}
+
+.brand strong {
+  color: #ff2d22;
+  display: block;
+  font-size: 18px;
+}
+
+.brand span,
+.sidebar small,
+.hero p,
+.card p,
+.field span,
+.workflowPanel dt,
+.workflowPanel dd,
+.lastAction {
+  color: #65605c;
+}
+
+.sideNav {
+  display: grid;
+  gap: 10px;
+}
+
+.sideNav button {
+  border: 0;
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.sideNav button.active {
+  background: #ffefeb;
+  color: #ff2d22;
+}
+
+.sideNav span {
+  color: #65605c;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.content {
+  padding: 34px;
+}
+
+.hero {
+  align-items: start;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.eyebrow {
+  color: #ff2d22;
+  font-size: 12px;
+  font-weight: 800;
+  margin: 0 0 12px;
+}
+
+h1 {
+  font-size: 30px;
+  line-height: 1.1;
+  margin: 0 0 8px;
+}
+
+h2 {
+  font-size: 22px;
+  margin: 0 0 8px;
+}
+
+.workflowPanel,
+.card {
+  background: #fff;
+  border: 1px solid #e2dcd2;
+  border-radius: 10px;
+}
+
+.workflowPanel {
+  min-width: 260px;
+  padding: 18px;
+}
+
+.statusPill,
+.warningPill,
+.artifactGrid em,
+.ruleList em {
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  margin: 12px 0;
+  padding: 7px 14px;
+}
+
+.statusPill,
+.artifactGrid em {
+  background: #e8f8ef;
+  color: #0a7a43;
+}
+
+.warningPill,
+.medium {
+  background: #fff6e0;
+  color: #c7750a;
+}
+
+.high {
+  background: #ffefeb;
+  color: #ff2d22;
+}
+
+dl {
+  margin: 0;
+}
+
+.workflowPanel div {
+  display: flex;
+  gap: 8px;
+}
+
+.workflowPanel dd {
+  margin: 0;
+}
+
+.stepper {
+  display: flex;
+  gap: 18px;
+  list-style: none;
+  margin: 26px 0;
+  padding: 0;
+}
+
+.stepper li {
+  background: #fff;
+  border: 1px solid #e2dcd2;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 13px 18px;
+}
+
+.stepper li.active {
+  background: #ff2d22;
+  border-color: #ff2d22;
+  color: #fff;
+}
+
+.stepper li.done {
+  background: #e8f8ef;
+  color: #0a7a43;
+}
+
+.grid.twoColumns {
+  display: grid;
+  gap: 32px;
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+
+.card {
+  padding: 24px;
+}
+
+.formGrid {
+  display: grid;
+  gap: 22px;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  margin: 28px 0;
+}
+
+.formGrid.three {
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field span {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.field input {
+  border: 1px solid #e2dcd2;
+  border-radius: 8px;
+  font-weight: 700;
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.schemaCard {
+  align-self: start;
+}
+
+.schemaRow {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.business_key,
+.watermark,
+.metric {
+  color: #ff2d22;
+}
+
+.profileBox,
+pre {
+  background: #f7f6f4;
+  border: 1px solid #e2dcd2;
+  border-radius: 8px;
+  margin: 28px 0;
+  padding: 18px;
+}
+
+.sectionHeader {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.table {
+  display: grid;
+  gap: 14px;
+  margin: 28px 0;
+}
+
+.mappingTable {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.row {
+  background: #f7f6f4;
+  border: 1px solid #e2dcd2;
+  border-radius: 8px;
+  display: contents;
+}
+
+.mappingTable .row span {
+  background: #f7f6f4;
+  border-top: 1px solid #e2dcd2;
+  font-weight: 700;
+  padding: 16px 12px;
+}
+
+.mappingTable .highlight span {
+  background: #fff6e0;
+  color: #c7750a;
+}
+
+.ruleList {
+  display: grid;
+  gap: 14px;
+  margin: 28px 0;
+}
+
+.ruleList article,
+.artifactGrid article,
+.executionGrid article {
+  background: #f7f6f4;
+  border: 1px solid #e2dcd2;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.ruleList article {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.ruleList span,
+.artifactGrid span,
+.executionGrid span {
+  color: #65605c;
+  display: block;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.artifactGrid,
+.executionGrid {
+  display: grid;
+  gap: 22px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 28px 0;
+}
+
+.executionGrid article.ready {
+  background: #e8f8ef;
+}
+
+.executionGrid article.warning {
+  background: #fff6e0;
+}
+
+pre {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.modalBackdrop {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: fixed;
+}
+
+.modal {
+  background: #fff;
+  border: 2px solid #ff2d22;
+  border-radius: 12px;
+  max-width: 460px;
+  padding: 24px;
+}
+
+@media (max-width: 980px) {
+  .app,
+  .grid.twoColumns {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid #e2dcd2;
+  }
+
+  .stepper,
+  .hero {
+    flex-wrap: wrap;
+  }
+
+  .formGrid,
+  .formGrid.three,
+  .artifactGrid,
+  .executionGrid {
+    grid-template-columns: 1fr;
+  }
+}
+

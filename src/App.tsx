@@ -23,6 +23,12 @@ const artifacts = [
 
 const stepOrder = steps.map((step) => step.id);
 const REQUESTED_BY = 'julio.cordova@gmail.com';
+const seedSchemaColumns = seedColumns.map((column) => ({
+  name: column.name,
+  data_type: column.type,
+  mode: column.usage === 'business_key' ? 'REQUIRED' : 'NULLABLE',
+  usage: column.usage,
+}));
 
 function workflowPatchFromRecord(record: SilverWorkflowRecord): Partial<WorkflowState> {
   return {
@@ -153,12 +159,7 @@ export function App() {
                     source_project: workflow.projectId ?? seedSource.projectId,
                     source_dataset: workflow.sourceDataset ?? seedSource.sourceDataset,
                     source_table: workflow.sourceTable ?? seedSource.sourceTable,
-                    columns: seedColumns.map((column) => ({
-                      name: column.name,
-                      type: column.type,
-                      mode: column.usage === 'business_key' ? 'REQUIRED' : 'NULLABLE',
-                      usage: column.usage,
-                    })),
+                    columns: seedSchemaColumns,
                     business_key_candidates: [seedSource.businessKey],
                     watermark_candidates: [seedSource.watermark],
                     metric_candidates: [seedSource.metric],
@@ -704,6 +705,25 @@ function SchemaPreview({
 }
 
 function IncrementalStep({ workflow, onNext }: { workflow: WorkflowState; onNext: () => void }) {
+  const validationChecks = [
+    {
+      label: `Business key ${seedSource.businessKey}`,
+      ok: seedSchemaColumns.some((column) => column.name === seedSource.businessKey),
+    },
+    {
+      label: `Watermark ${seedSource.watermark}`,
+      ok: seedSchemaColumns.some((column) => column.name === seedSource.watermark),
+    },
+    {
+      label: `Metrica ${seedSource.metric}`,
+      ok: seedSchemaColumns.some((column) => column.name === seedSource.metric),
+    },
+    {
+      label: 'Columnas con data_type requerido por backend',
+      ok: seedSchemaColumns.every((column) => Boolean(column.data_type)),
+    },
+  ];
+
   return (
     <section className="card">
       <h2>Estrategia de carga</h2>
@@ -719,6 +739,14 @@ function IncrementalStep({ workflow, onNext }: { workflow: WorkflowState; onNext
         <strong>Perfil BigQuery semilla</strong>
         <p>Filas: 13 · Distinct producto_id: 13 · SUM prima_base: 21390</p>
         <p>Rango watermark: 2026-07-31 20:30:00 → 2026-08-01 20:30:00</p>
+      </div>
+      <div className="validationBox">
+        <strong>Validacion deterministica de columnas</strong>
+        {validationChecks.map((check) => (
+          <span key={check.label} className={check.ok ? 'checkOk' : 'checkFail'}>
+            {check.ok ? 'OK' : 'ERROR'} · {check.label}
+          </span>
+        ))}
       </div>
       <button className="primary" onClick={onNext}>Confirmar estrategia</button>
     </section>

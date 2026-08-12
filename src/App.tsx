@@ -274,13 +274,32 @@ export function App() {
                   target_table: workflow.targetTable ?? seedSource.targetTable,
                   columns,
                   load_strategy: {
-                    mode: 'INCREMENTAL',
+                    type: 'INCREMENTAL_WATERMARK',
                     watermark_column: seedSource.watermark,
-                    business_key: [seedSource.businessKey],
+                    business_keys: [seedSource.businessKey],
                   },
                   physical_design: {
-                    partition_by: seedSource.watermark,
-                    cluster_by: [seedSource.businessKey],
+                    partitioning: {
+                      enabled: true,
+                      column: seedSource.watermark,
+                      granularity: 'DAY',
+                    },
+                    clustering_columns: [seedSource.businessKey],
+                  },
+                  specification: {
+                    load_strategy: {
+                      type: 'INCREMENTAL_WATERMARK',
+                      watermark_column: seedSource.watermark,
+                      business_keys: [seedSource.businessKey],
+                    },
+                    physical_design: {
+                      partitioning: {
+                        enabled: true,
+                        column: seedSource.watermark,
+                        granularity: 'DAY',
+                      },
+                      clustering_columns: [seedSource.businessKey],
+                    },
                   },
                   source_project: workflow.projectId ?? seedSource.projectId,
                   source_dataset: workflow.sourceDataset ?? seedSource.sourceDataset,

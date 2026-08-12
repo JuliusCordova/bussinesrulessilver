@@ -31,26 +31,26 @@ export const mappingRules: MappingRule[] = [
     sourceColumn: 'producto_id',
     targetColumn: 'producto_id',
     targetType: 'STRING',
-    transformationType: 'DIRECT',
+    transformationType: 'DIRECT_COPY',
   },
   {
     sourceColumn: 'prima_base',
     targetColumn: 'prima_base',
     targetType: 'NUMERIC',
-    transformationType: 'DIRECT',
+    transformationType: 'DIRECT_COPY',
   },
   {
     sourceColumn: 'periodicidad',
     targetColumn: 'prima_base_anualizada',
     targetType: 'NUMERIC',
-    transformationType: 'DIRECT',
+    transformationType: 'DIRECT_COPY',
     expression: "CASE WHEN periodicidad = 'MENSUAL' THEN prima_base * 12 ELSE prima_base END",
   },
   {
     sourceColumn: 'bronze_*',
     targetColumn: 'bronze_*',
     targetType: 'STRING',
-    transformationType: 'DIRECT',
+    transformationType: 'TRACE_COPY',
   },
 ];
 
@@ -86,4 +86,3 @@ export const businessRules: BusinessRule[] = [
     expression: 'SUM(prima_base) source = SUM(prima_base) target',
   },
 ];
-

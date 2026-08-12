@@ -1,0 +1,50 @@
+[
+  {
+    "name": "producto_id",
+    "type": "STRING"
+  },
+  {
+    "name": "ramo_id",
+    "type": "STRING"
+  },
+  {
+    "name": "nombre_producto",
+    "type": "STRING"
+  },
+  {
+    "name": "moneda",
+    "type": "STRING"
+  },
+  {
+    "name": "periodicidad",
+    "type": "STRING"
+  },
+  {
+    "name": "prima_base",
+    "type": "NUMERIC"
+  },
+  {
+    "name": "bronze_registro_id",
+    "type": "STRING"
+  },
+  {
+    "name": "bronze_carga_id",
+    "type": "STRING"
+  },
+  {
+    "name": "bronze_fecha_ingesta",
+    "type": "TIMESTAMP"
+  },
+  {
+    "name": "bronze_archivo_origen",
+    "type": "STRING"
+  },
+  {
+    "name": "bronze_hash_origen",
+    "type": "STRING"
+  },
+  {
+    "name": "bronze_estado_registro",
+    "type": "STRING"
+  }
+]

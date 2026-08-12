@@ -1,0 +1,9 @@
+[
+  {
+    "distinct_producto_id": "13", 
+    "max_bronze_fecha_ingesta": "2026-08-01 20:30:00", 
+    "min_bronze_fecha_ingesta": "2026-07-31 20:30:00", 
+    "row_count": "13", 
+    "sum_prima_base": "21390"
+  }
+]

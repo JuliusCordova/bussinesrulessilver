@@ -1,0 +1,1428 @@
+{
+  "BronzeSourceReference": {
+    "properties": {
+      "connection_id": {
+        "type": "string",
+        "maxLength": 300,
+        "minLength": 1,
+        "title": "Connection Id"
+      },
+      "project_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 300
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Project Id"
+      },
+      "dataset_id": {
+        "type": "string",
+        "maxLength": 300,
+        "minLength": 1,
+        "title": "Dataset Id"
+      },
+      "table_id": {
+        "type": "string",
+        "maxLength": 300,
+        "minLength": 1,
+        "title": "Table Id"
+      },
+      "fully_qualified_name": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 1000
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Fully Qualified Name"
+      }
+    },
+    "type": "object",
+    "required": [
+      "connection_id",
+      "dataset_id",
+      "table_id"
+    ],
+    "title": "BronzeSourceReference"
+  },
+  "SilverTargetReference": {
+    "properties": {
+      "project_id": {
+        "type": "string",
+        "maxLength": 300,
+        "minLength": 1,
+        "title": "Project Id"
+      },
+      "dataset_id": {
+        "type": "string",
+        "maxLength": 300,
+        "minLength": 1,
+        "title": "Dataset Id"
+      },
+      "table_id": {
+        "type": "string",
+        "maxLength": 300,
+        "minLength": 1,
+        "title": "Table Id"
+      }
+    },
+    "type": "object",
+    "required": [
+      "project_id",
+      "dataset_id",
+      "table_id"
+    ],
+    "title": "SilverTargetReference"
+  },
+  "CreateSilverWorkflowRequest": {
+    "properties": {
+      "source": {
+        "$ref": "#/components/schemas/BronzeSourceReference"
+      },
+      "requested_by": {
+        "type": "string",
+        "maxLength": 200,
+        "minLength": 2,
+        "title": "Requested By"
+      },
+      "metadata": {
+        "additionalProperties": true,
+        "type": "object",
+        "title": "Metadata"
+      }
+    },
+    "type": "object",
+    "required": [
+      "source",
+      "requested_by"
+    ],
+    "title": "CreateSilverWorkflowRequest"
+  },
+  "SilverWorkflowRecord": {
+    "properties": {
+      "workflow_id": {
+        "type": "string",
+        "title": "Workflow Id"
+      },
+      "version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Version"
+      },
+      "status": {
+        "$ref": "#/components/schemas/WorkflowStatus"
+      },
+      "active_step": {
+        "type": "integer",
+        "maximum": 8.0,
+        "minimum": 1.0,
+        "title": "Active Step"
+      },
+      "source": {
+        "$ref": "#/components/schemas/BronzeSourceReference"
+      },
+      "source_confirmed": {
+        "type": "boolean",
+        "title": "Source Confirmed",
+        "default": false
+      },
+      "schema_context": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/SchemaContextEvidence"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "business_rules": {
+        "$ref": "#/components/schemas/BusinessRulesSection"
+      },
+      "mapping_rules": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "type": "array",
+        "title": "Mapping Rules"
+      },
+      "mapping_version": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 1.0
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Mapping Version"
+      },
+      "silver_target": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/SilverTargetReference"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "quality_rules": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "type": "array",
+        "title": "Quality Rules"
+      },
+      "quality_review": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Quality Review"
+      },
+      "artifact_package": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Artifact Package"
+      },
+      "governance": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Governance"
+      },
+      "execution": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Execution"
+      },
+      "validation": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Validation"
+      },
+      "spec_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Spec Id"
+      },
+      "execution_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Execution Id"
+      },
+      "available_actions": {
+        "items": {
+          "$ref": "#/components/schemas/WorkflowAction"
+        },
+        "type": "array",
+        "title": "Available Actions"
+      },
+      "correlation_id": {
+        "type": "string",
+        "title": "Correlation Id"
+      },
+      "created_by": {
+        "type": "string",
+        "title": "Created By"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time",
+        "title": "Created At"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time",
+        "title": "Updated At"
+      },
+      "metadata": {
+        "additionalProperties": true,
+        "type": "object",
+        "title": "Metadata"
+      }
+    },
+    "type": "object",
+    "required": [
+      "workflow_id",
+      "version",
+      "status",
+      "active_step",
+      "source",
+      "correlation_id",
+      "created_by"
+    ],
+    "title": "SilverWorkflowRecord"
+  },
+  "WorkflowStatus": {
+    "type": "string",
+    "enum": [
+      "DRAFT",
+      "IN_PROGRESS",
+      "AWAITING_REVIEW",
+      "APPROVED",
+      "EXECUTING",
+      "SUCCEEDED",
+      "FAILED",
+      "CANCELLED"
+    ],
+    "title": "WorkflowStatus"
+  },
+  "WorkflowAction": {
+    "type": "string",
+    "enum": [
+      "CONFIRM_SOURCE",
+      "DEFINE_BUSINESS_RULES",
+      "GENERATE_BUSINESS_RULES",
+      "CONFIRM_BUSINESS_RULES",
+      "REVIEW_MAPPING",
+      "REVIEW_QUALITY",
+      "GENERATE_ARTIFACTS",
+      "REVIEW_GOVERNANCE",
+      "CREATE_EXECUTION",
+      "MONITOR_EXECUTION",
+      "VALIDATE_SILVER",
+      "VIEW_RESULT"
+    ],
+    "title": "WorkflowAction"
+  },
+  "ConfirmWorkflowSourceRequest": {
+    "properties": {
+      "expected_version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Expected Version"
+      },
+      "schema_context": {
+        "$ref": "#/components/schemas/SchemaContextEvidence"
+      },
+      "confirmed_by": {
+        "type": "string",
+        "maxLength": 200,
+        "minLength": 2,
+        "title": "Confirmed By"
+      }
+    },
+    "type": "object",
+    "required": [
+      "expected_version",
+      "schema_context",
+      "confirmed_by"
+    ],
+    "title": "ConfirmWorkflowSourceRequest"
+  },
+  "GenerateMappingRecommendationRequest": {
+    "properties": {
+      "expected_version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Expected Version"
+      },
+      "target_project": {
+        "type": "string",
+        "maxLength": 300,
+        "minLength": 1,
+        "title": "Target Project"
+      },
+      "target_dataset": {
+        "type": "string",
+        "maxLength": 300,
+        "minLength": 1,
+        "title": "Target Dataset"
+      },
+      "target_table": {
+        "type": "string",
+        "maxLength": 300,
+        "minLength": 1,
+        "title": "Target Table"
+      }
+    },
+    "type": "object",
+    "required": [
+      "expected_version",
+      "target_project",
+      "target_dataset",
+      "target_table"
+    ],
+    "title": "GenerateMappingRecommendationRequest"
+  },
+  "MappingRecommendationResponse": {
+    "properties": {
+      "workflow_id": {
+        "type": "string",
+        "title": "Workflow Id"
+      },
+      "source_workflow_version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Source Workflow Version"
+      },
+      "target_project": {
+        "type": "string",
+        "title": "Target Project"
+      },
+      "target_dataset": {
+        "type": "string",
+        "title": "Target Dataset"
+      },
+      "target_table": {
+        "type": "string",
+        "title": "Target Table"
+      },
+      "columns": {
+        "items": {
+          "$ref": "#/components/schemas/IntelligentMappingColumn"
+        },
+        "type": "array",
+        "title": "Columns"
+      },
+      "load_strategy": {
+        "$ref": "#/components/schemas/LoadStrategy"
+      },
+      "physical_design": {
+        "$ref": "#/components/schemas/PhysicalDesign"
+      },
+      "recommendation_engine": {
+        "type": "string",
+        "title": "Recommendation Engine",
+        "default": "deterministic-v1"
+      },
+      "requires_human_approval": {
+        "type": "boolean",
+        "title": "Requires Human Approval",
+        "default": true
+      }
+    },
+    "type": "object",
+    "required": [
+      "workflow_id",
+      "source_workflow_version",
+      "target_project",
+      "target_dataset",
+      "target_table",
+      "columns",
+      "load_strategy",
+      "physical_design"
+    ],
+    "title": "MappingRecommendationResponse"
+  },
+  "GenerateBusinessRulesRequest": {
+    "properties": {
+      "expected_version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Expected Version"
+      },
+      "generation_reason": {
+        "type": "string",
+        "maxLength": 2000,
+        "minLength": 2,
+        "title": "Generation Reason"
+      },
+      "max_rules": {
+        "type": "integer",
+        "maximum": 20.0,
+        "minimum": 1.0,
+        "title": "Max Rules",
+        "default": 5
+      }
+    },
+    "type": "object",
+    "required": [
+      "expected_version",
+      "generation_reason"
+    ],
+    "title": "GenerateBusinessRulesRequest"
+  },
+  "SaveBusinessRulesDraftRequest": {
+    "properties": {
+      "expected_version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Expected Version"
+      },
+      "rules": {
+        "items": {
+          "$ref": "#/components/schemas/BusinessRule"
+        },
+        "type": "array",
+        "minItems": 1,
+        "title": "Rules"
+      },
+      "authored_by": {
+        "type": "string",
+        "maxLength": 200,
+        "minLength": 2,
+        "title": "Authored By"
+      },
+      "change_reason": {
+        "type": "string",
+        "maxLength": 2000,
+        "minLength": 2,
+        "title": "Change Reason"
+      }
+    },
+    "type": "object",
+    "required": [
+      "expected_version",
+      "rules",
+      "authored_by",
+      "change_reason"
+    ],
+    "title": "SaveBusinessRulesDraftRequest"
+  },
+  "ConfirmBusinessRulesRequest": {
+    "properties": {
+      "expected_version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Expected Version"
+      },
+      "confirmed_by": {
+        "type": "string",
+        "maxLength": 200,
+        "minLength": 2,
+        "title": "Confirmed By"
+      },
+      "confirmation_reason": {
+        "type": "string",
+        "maxLength": 2000,
+        "minLength": 2,
+        "title": "Confirmation Reason"
+      },
+      "selected_proposal_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 300
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Selected Proposal Id"
+      }
+    },
+    "type": "object",
+    "required": [
+      "expected_version",
+      "confirmed_by",
+      "confirmation_reason"
+    ],
+    "title": "ConfirmBusinessRulesRequest"
+  },
+  "BusinessRulesSection": {
+    "properties": {
+      "status": {
+        "$ref": "#/components/schemas/BusinessRuleStatus",
+        "default": "EMPTY"
+      },
+      "rules": {
+        "items": {
+          "$ref": "#/components/schemas/BusinessRule"
+        },
+        "type": "array",
+        "title": "Rules"
+      },
+      "proposal_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 300
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proposal Id"
+      },
+      "proposal_metadata": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/BusinessRuleProposalMetadata"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "last_modified_by": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 200
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Modified By"
+      },
+      "last_modified_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Modified At"
+      },
+      "confirmed_by": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 200
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Confirmed By"
+      },
+      "confirmed_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Confirmed At"
+      },
+      "confirmation_reason": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 2000
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Confirmation Reason"
+      }
+    },
+    "type": "object",
+    "title": "BusinessRulesSection"
+  },
+  "ReviewQualityRequest": {
+    "properties": {
+      "expected_version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Expected Version"
+      },
+      "decision": {
+        "$ref": "#/components/schemas/QualityReviewDecision"
+      },
+      "reviewed_by": {
+        "type": "string",
+        "maxLength": 200,
+        "minLength": 2,
+        "title": "Reviewed By"
+      },
+      "review_notes": {
+        "type": "string",
+        "maxLength": 4000,
+        "minLength": 2,
+        "title": "Review Notes"
+      },
+      "quality_rules": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "type": "array",
+        "title": "Quality Rules"
+      }
+    },
+    "type": "object",
+    "required": [
+      "expected_version",
+      "decision",
+      "reviewed_by",
+      "review_notes"
+    ],
+    "title": "ReviewQualityRequest"
+  },
+  "SaveSilverSpecificationRequest": {
+    "properties": {
+      "expected_version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Expected Version"
+      },
+      "mapping_version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Mapping Version"
+      },
+      "target": {
+        "$ref": "#/components/schemas/SilverTargetReference"
+      },
+      "columns": {
+        "items": {
+          "$ref": "#/components/schemas/SilverMappingColumn"
+        },
+        "type": "array",
+        "minItems": 1,
+        "title": "Columns"
+      },
+      "created_by": {
+        "type": "string",
+        "maxLength": 200,
+        "minLength": 2,
+        "title": "Created By"
+      },
+      "change_reason": {
+        "type": "string",
+        "maxLength": 2000,
+        "minLength": 2,
+        "title": "Change Reason"
+      }
+    },
+    "type": "object",
+    "required": [
+      "expected_version",
+      "mapping_version",
+      "target",
+      "columns",
+      "created_by",
+      "change_reason"
+    ],
+    "title": "SaveSilverSpecificationRequest"
+  },
+  "GenerateArtifactPackageRequest": {
+    "properties": {
+      "mapping_version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Mapping Version"
+      },
+      "target_project": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Target Project"
+      },
+      "target_dataset": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Target Dataset"
+      },
+      "target_table": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Target Table"
+      },
+      "columns": {
+        "items": {
+          "$ref": "#/components/schemas/SilverColumn"
+        },
+        "type": "array",
+        "minItems": 1,
+        "title": "Columns"
+      },
+      "load_strategy": {
+        "$ref": "#/components/schemas/LoadStrategy"
+      },
+      "physical_design": {
+        "$ref": "#/components/schemas/PhysicalDesign"
+      },
+      "generated_by": {
+        "type": "string",
+        "title": "Generated By",
+        "default": "system"
+      },
+      "metadata": {
+        "additionalProperties": true,
+        "type": "object",
+        "title": "Metadata"
+      },
+      "source_project": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Source Project"
+      },
+      "source_dataset": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Source Dataset"
+      },
+      "source_table": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Source Table"
+      },
+      "specification": {
+        "additionalProperties": true,
+        "type": "object",
+        "title": "Specification"
+      },
+      "quality_rules": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "type": "array",
+        "title": "Quality Rules"
+      }
+    },
+    "type": "object",
+    "required": [
+      "mapping_version",
+      "target_project",
+      "target_dataset",
+      "target_table",
+      "columns",
+      "source_project",
+      "source_dataset",
+      "source_table"
+    ],
+    "title": "GenerateArtifactPackageRequest"
+  },
+  "GenerateSilverDDLRequest": {
+    "properties": {
+      "mapping_version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Mapping Version"
+      },
+      "target_project": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Target Project"
+      },
+      "target_dataset": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Target Dataset"
+      },
+      "target_table": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Target Table"
+      },
+      "columns": {
+        "items": {
+          "$ref": "#/components/schemas/SilverColumn"
+        },
+        "type": "array",
+        "minItems": 1,
+        "title": "Columns"
+      },
+      "load_strategy": {
+        "$ref": "#/components/schemas/LoadStrategy"
+      },
+      "physical_design": {
+        "$ref": "#/components/schemas/PhysicalDesign"
+      },
+      "generated_by": {
+        "type": "string",
+        "title": "Generated By",
+        "default": "system"
+      },
+      "metadata": {
+        "additionalProperties": true,
+        "type": "object",
+        "title": "Metadata"
+      }
+    },
+    "type": "object",
+    "required": [
+      "mapping_version",
+      "target_project",
+      "target_dataset",
+      "target_table",
+      "columns"
+    ],
+    "title": "GenerateSilverDDLRequest"
+  },
+  "ArtifactPackageResponse": {
+    "properties": {
+      "spec_id": {
+        "type": "string",
+        "title": "Spec Id"
+      },
+      "mapping_version": {
+        "type": "integer",
+        "title": "Mapping Version"
+      },
+      "artifacts": {
+        "items": {
+          "$ref": "#/components/schemas/ArtifactRecord"
+        },
+        "type": "array",
+        "title": "Artifacts"
+      }
+    },
+    "type": "object",
+    "required": [
+      "spec_id",
+      "mapping_version",
+      "artifacts"
+    ],
+    "title": "ArtifactPackageResponse"
+  },
+  "ArtifactRecord": {
+    "properties": {
+      "artifact_id": {
+        "type": "string",
+        "title": "Artifact Id"
+      },
+      "spec_id": {
+        "type": "string",
+        "title": "Spec Id"
+      },
+      "mapping_version": {
+        "type": "integer",
+        "title": "Mapping Version"
+      },
+      "artifact_type": {
+        "$ref": "#/components/schemas/ArtifactType"
+      },
+      "artifact_name": {
+        "type": "string",
+        "title": "Artifact Name"
+      },
+      "artifact_version": {
+        "type": "integer",
+        "title": "Artifact Version"
+      },
+      "generation_status": {
+        "$ref": "#/components/schemas/ArtifactStatus"
+      },
+      "validation_status": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Validation Status"
+      },
+      "content_text": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Content Text"
+      },
+      "storage_uri": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Storage Uri"
+      },
+      "content_hash": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Content Hash"
+      },
+      "template_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Template Name"
+      },
+      "template_version": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Template Version"
+      },
+      "generated_by": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Generated By"
+      },
+      "generated_at": {
+        "type": "string",
+        "format": "date-time",
+        "title": "Generated At"
+      },
+      "approved_by": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Approved By"
+      },
+      "approved_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Approved At"
+      },
+      "is_current": {
+        "type": "boolean",
+        "title": "Is Current",
+        "default": true
+      },
+      "metadata": {
+        "additionalProperties": true,
+        "type": "object",
+        "title": "Metadata"
+      }
+    },
+    "type": "object",
+    "required": [
+      "artifact_id",
+      "spec_id",
+      "mapping_version",
+      "artifact_type",
+      "artifact_name",
+      "artifact_version",
+      "generation_status"
+    ],
+    "title": "ArtifactRecord"
+  },
+  "CreateExecutionRequest": {
+    "properties": {
+      "spec_id": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Spec Id"
+      },
+      "requested_by": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Requested By",
+        "default": "system"
+      }
+    },
+    "type": "object",
+    "required": [
+      "spec_id"
+    ],
+    "title": "CreateExecutionRequest"
+  },
+  "ExecutionRecord": {
+    "properties": {
+      "execution_id": {
+        "type": "string",
+        "title": "Execution Id"
+      },
+      "spec_id": {
+        "type": "string",
+        "title": "Spec Id"
+      },
+      "mapping_version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Mapping Version"
+      },
+      "package_version": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Package Version"
+      },
+      "artifact_package_uri": {
+        "type": "string",
+        "title": "Artifact Package Uri"
+      },
+      "load_strategy": {
+        "type": "string",
+        "title": "Load Strategy",
+        "default": "FULL"
+      },
+      "watermark_column": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Watermark Column"
+      },
+      "runtime_watermark": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Runtime Watermark"
+      },
+      "next_watermark": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Next Watermark"
+      },
+      "lookback_value": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0.0
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Lookback Value"
+      },
+      "lookback_unit": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Lookback Unit"
+      },
+      "status": {
+        "$ref": "#/components/schemas/ExecutionStatus",
+        "default": "PENDING"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time",
+        "title": "Created At"
+      },
+      "started_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Started At"
+      },
+      "finished_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Finished At"
+      },
+      "dataproc_batch_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Dataproc Batch Id"
+      },
+      "rows_read": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0.0
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Rows Read"
+      },
+      "rows_written": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0.0
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Rows Written"
+      },
+      "error_message": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Error Message"
+      },
+      "logs_uri": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Logs Uri"
+      },
+      "requested_by": {
+        "type": "string",
+        "title": "Requested By",
+        "default": "system"
+      }
+    },
+    "type": "object",
+    "required": [
+      "execution_id",
+      "spec_id",
+      "mapping_version",
+      "package_version",
+      "artifact_package_uri"
+    ],
+    "title": "ExecutionRecord"
+  },
+  "DataprocSubmissionResponse": {
+    "properties": {
+      "execution": {
+        "$ref": "#/components/schemas/ExecutionRecord"
+      },
+      "batch_id": {
+        "type": "string",
+        "title": "Batch Id"
+      },
+      "batch_name": {
+        "type": "string",
+        "title": "Batch Name"
+      },
+      "pyspark_uri": {
+        "type": "string",
+        "title": "Pyspark Uri"
+      },
+      "operation_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Operation Name"
+      }
+    },
+    "type": "object",
+    "required": [
+      "execution",
+      "batch_id",
+      "batch_name",
+      "pyspark_uri"
+    ],
+    "title": "DataprocSubmissionResponse"
+  },
+  "PackageValidationResponse": {
+    "properties": {
+      "execution": {
+        "$ref": "#/components/schemas/ExecutionRecord"
+      },
+      "current_uri": {
+        "type": "string",
+        "title": "Current Uri"
+      },
+      "manifest_uri": {
+        "type": "string",
+        "title": "Manifest Uri"
+      },
+      "package_hash": {
+        "type": "string",
+        "title": "Package Hash"
+      },
+      "files_validated": {
+        "type": "integer",
+        "minimum": 1.0,
+        "title": "Files Validated"
+      }
+    },
+    "type": "object",
+    "required": [
+      "execution",
+      "current_uri",
+      "manifest_uri",
+      "package_hash",
+      "files_validated"
+    ],
+    "title": "PackageValidationResponse"
+  },
+  "ExecutionMonitoringResponse": {
+    "properties": {
+      "execution": {
+        "$ref": "#/components/schemas/ExecutionRecord"
+      },
+      "dataproc_state": {
+        "type": "string",
+        "title": "Dataproc State"
+      },
+      "state_message": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "State Message"
+      },
+      "state_time": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "State Time"
+      },
+      "output_uri": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Output Uri"
+      },
+      "diagnostic_output_uri": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Diagnostic Output Uri"
+      }
+    },
+    "type": "object",
+    "required": [
+      "execution",
+      "dataproc_state"
+    ],
+    "title": "ExecutionMonitoringResponse"
+  }
+}

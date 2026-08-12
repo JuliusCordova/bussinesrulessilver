@@ -1,0 +1,63 @@
+{
+  "WorkflowStatus": {
+    "type": "string",
+    "enum": [
+      "DRAFT",
+      "IN_PROGRESS",
+      "AWAITING_REVIEW",
+      "APPROVED",
+      "EXECUTING",
+      "SUCCEEDED",
+      "FAILED",
+      "CANCELLED"
+    ],
+    "title": "WorkflowStatus"
+  },
+  "WorkflowAction": {
+    "type": "string",
+    "enum": [
+      "CONFIRM_SOURCE",
+      "DEFINE_BUSINESS_RULES",
+      "GENERATE_BUSINESS_RULES",
+      "CONFIRM_BUSINESS_RULES",
+      "REVIEW_MAPPING",
+      "REVIEW_QUALITY",
+      "GENERATE_ARTIFACTS",
+      "REVIEW_GOVERNANCE",
+      "CREATE_EXECUTION",
+      "MONITOR_EXECUTION",
+      "VALIDATE_SILVER",
+      "VIEW_RESULT"
+    ],
+    "title": "WorkflowAction"
+  },
+  "ExecutionStatus": {
+    "type": "string",
+    "enum": [
+      "PENDING",
+      "VALIDATED",
+      "QUEUED",
+      "RUNNING",
+      "SUCCEEDED",
+      "FAILED",
+      "CANCELLED"
+    ],
+    "title": "ExecutionStatus"
+  },
+  "ArtifactType": {
+    "type": "string",
+    "enum": [
+      "SILVER_DDL",
+      "SPECIFICATION_JSON",
+      "MAPPING_JSON",
+      "TRANSFORMATIONS_JSON",
+      "README",
+      "MANIFEST_JSON",
+      "PYSPARK_SCRIPT",
+      "NOTEBOOK",
+      "ARTIFACT_PACKAGE"
+    ],
+    "title": "ArtifactType"
+  },
+  "GovernanceStatus": null
+}

@@ -40,22 +40,145 @@ export const silverApi = {
     ),
 
   createWorkflow: (payload: unknown) =>
-    request<unknown>('/silver-workflows', {
+    request<SilverWorkflowRecord>('/silver-workflows', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getWorkflow: (workflowId: string) =>
+    request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}`),
+
+  confirmSource: (workflowId: string, payload: unknown) =>
+    request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}/confirm-source`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
 
   generateMapping: (workflowId: string, payload: unknown) =>
-    request<unknown>(`/silver-workflows/${workflowId}/mapping-recommendations`, {
+    request<MappingRecommendationResponse>(`/silver-workflows/${workflowId}/mapping-recommendations`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
 
+  generateBusinessRules: (workflowId: string, payload: unknown) =>
+    request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}/business-rules/generate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  saveBusinessRulesDraft: (workflowId: string, payload: unknown) =>
+    request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}/business-rules/draft`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+
+  confirmBusinessRules: (workflowId: string, payload: unknown) =>
+    request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}/business-rules/confirm`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  reviewQuality: (workflowId: string, payload: unknown) =>
+    request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}/quality-review`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  saveSpecification: (workflowId: string, payload: unknown) =>
+    request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}/specification`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  generateArtifacts: (specId: string, payload: unknown) =>
+    request<ArtifactPackageResponse>(`/silver-refinement/specs/${specId}/artifacts/generate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  createExecution: (payload: unknown) =>
+    request<ExecutionRecord>('/executions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  validatePackage: (executionId: string) =>
+    request<PackageValidationResponse>(`/executions/${executionId}/validate-package`, {
+      method: 'POST',
+    }),
+
   submitDataproc: (executionId: string) =>
-    request<unknown>(`/executions/${executionId}/submit`, {
+    request<DataprocSubmissionResponse>(`/executions/${executionId}/submit`, {
+      method: 'POST',
+    }),
+
+  syncExecution: (executionId: string) =>
+    request<ExecutionMonitoringResponse>(`/executions/${executionId}/sync-status`, {
       method: 'POST',
     }),
 };
+
+export interface SilverWorkflowRecord {
+  workflow_id: string;
+  version: number;
+  status: WorkflowState['status'];
+  active_step: number;
+  spec_id?: string | null;
+  execution_id?: string | null;
+  mapping_version?: number | null;
+  available_actions?: string[];
+  business_rules?: { proposal_id?: string | null; rules?: unknown[] };
+  mapping_rules?: unknown[];
+  silver_target?: unknown;
+}
+
+export interface MappingRecommendationResponse {
+  workflow_id: string;
+  source_workflow_version: number;
+  target_project: string;
+  target_dataset: string;
+  target_table: string;
+  columns: Array<Record<string, unknown>>;
+  load_strategy: Record<string, unknown>;
+  physical_design: Record<string, unknown>;
+}
+
+export interface ArtifactPackageResponse {
+  spec_id: string;
+  mapping_version: number;
+  artifacts: Array<Record<string, unknown>>;
+}
+
+export interface ExecutionRecord {
+  execution_id: string;
+  spec_id: string;
+  mapping_version: number;
+  package_version: number;
+  artifact_package_uri: string;
+  status?: string;
+}
+
+export interface PackageValidationResponse {
+  execution: ExecutionRecord;
+  current_uri: string;
+  manifest_uri: string;
+  package_hash: string;
+  files_validated: number;
+}
+
+export interface DataprocSubmissionResponse {
+  execution: ExecutionRecord;
+  batch_id: string;
+  batch_name: string;
+  pyspark_uri: string;
+  operation_name?: string | null;
+}
+
+export interface ExecutionMonitoringResponse {
+  execution: ExecutionRecord;
+  dataproc_state: string;
+  state_message?: string | null;
+}
 
 export interface CatalogDatasetResponse {
   datasets?: Array<string | { dataset_id?: string; datasetId?: string; id?: string; name?: string }>;

@@ -56,3 +56,9 @@ export interface BusinessRule {
   expression: string;
 }
 
+export interface CatalogField {
+  name: string;
+  type: string;
+  mode?: string;
+  description?: string;
+}

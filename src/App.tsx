@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { demoWorkflowPatch, silverApi, type CatalogTableDetail } from './api';
+import { demoWorkflowPatch, silverApi, type CatalogTableDetail, type SilverWorkflowRecord } from './api';
 import { businessRules, mappingRules, seedColumns, seedSource } from './seed';
 import type { CatalogField, StepId, WorkflowState } from './types';
 
@@ -22,6 +22,22 @@ const artifacts = [
 ];
 
 const stepOrder = steps.map((step) => step.id);
+const REQUESTED_BY = 'julio.cordova@gmail.com';
+
+function workflowPatchFromRecord(record: SilverWorkflowRecord): Partial<WorkflowState> {
+  return {
+    workflowId: record.workflow_id,
+    version: record.version,
+    status: record.status,
+    specId: record.spec_id ?? undefined,
+    executionId: record.execution_id ?? undefined,
+    mappingVersion: record.mapping_version ?? undefined,
+  };
+}
+
+function currentVersion(workflow: WorkflowState) {
+  return workflow.version ?? 1;
+}
 
 export function App() {
   const [workflow, setWorkflow] = useState<WorkflowState>({
@@ -37,15 +53,27 @@ export function App() {
     setWorkflow((current) => ({ ...current, activeStep: step }));
   }
 
-  function completeStep(action: string) {
-    const nextStep = stepOrder[Math.min(activeIndex + 1, stepOrder.length - 1)];
+  function applyWorkflowRecord(record: SilverWorkflowRecord, activeStep: StepId, action: string) {
     setWorkflow((current) => ({
       ...current,
+      ...workflowPatchFromRecord(record),
       ...demoWorkflowPatch(action),
-      status: nextStep === 'execution' ? 'APPROVED' : 'IN_PROGRESS',
-      activeStep: nextStep,
-      workflowId: current.workflowId ?? 'WF_CAT_PRODUCTO',
-      specId: nextStep === 'execution' || current.activeStep === 'artifacts' ? 'SPEC_CAT_PRODUCTO' : current.specId,
+      activeStep,
+      error: undefined,
+      backendMessage: JSON.stringify({
+        workflow_id: record.workflow_id,
+        version: record.version,
+        status: record.status,
+        spec_id: record.spec_id,
+        execution_id: record.execution_id,
+      }),
+    }));
+  }
+
+  function applyError(error: unknown) {
+    setWorkflow((current) => ({
+      ...current,
+      error: (error as Error).message,
     }));
   }
 
@@ -95,21 +123,202 @@ export function App() {
           ))}
         </ol>
 
-        {workflow.activeStep === 'source' && <SourceStep onNext={() => completeStep('Workflow creado')} />}
-        {workflow.activeStep === 'incremental' && <IncrementalStep onNext={() => completeStep('Estrategia confirmada')} />}
-        {workflow.activeStep === 'mapping' && <MappingStep onNext={() => completeStep('Mapping guardado')} />}
-        {workflow.activeStep === 'rules' && <RulesStep onNext={() => completeStep('Reglas confirmadas')} />}
-        {workflow.activeStep === 'artifacts' && <ArtifactsStep onNext={() => completeStep('Artefactos generados')} />}
-        {workflow.activeStep === 'execution' && (
-          <ExecutionStep
-            onValidate={() =>
+        {workflow.error && <p className="errorBox">{workflow.error}</p>}
+
+        {workflow.activeStep === 'source' && (
+          <SourceStep
+            onWorkflowCreated={(record, selection) => {
               setWorkflow((current) => ({
                 ...current,
-                ...demoWorkflowPatch('Package validado'),
-                executionId: current.executionId ?? 'EXEC_CAT_PRODUCTO',
-                executionStatus: 'VALIDATED',
-              }))
-            }
+                ...workflowPatchFromRecord(record),
+                ...selection,
+                ...demoWorkflowPatch('Workflow creado en backend'),
+                activeStep: 'incremental',
+                error: undefined,
+                backendMessage: JSON.stringify(record),
+              }));
+            }}
+            onError={applyError}
+          />
+        )}
+        {workflow.activeStep === 'incremental' && (
+          <IncrementalStep
+            workflow={workflow}
+            onNext={async () => {
+              try {
+                if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
+                const record = await silverApi.confirmSource(workflow.workflowId, {
+                  expected_version: currentVersion(workflow),
+                  schema_context: {
+                    source_project: workflow.projectId ?? seedSource.projectId,
+                    source_dataset: workflow.sourceDataset ?? seedSource.sourceDataset,
+                    source_table: workflow.sourceTable ?? seedSource.sourceTable,
+                    business_key_candidates: [seedSource.businessKey],
+                    watermark_candidates: [seedSource.watermark],
+                    metric_candidates: [seedSource.metric],
+                    profile: {
+                      row_count: 13,
+                      distinct_producto_id: 13,
+                      sum_prima_base: 21390,
+                    },
+                  },
+                  confirmed_by: REQUESTED_BY,
+                });
+                applyWorkflowRecord(record, 'mapping', 'Origen confirmado en backend');
+              } catch (error) {
+                applyError(error);
+              }
+            }}
+          />
+        )}
+        {workflow.activeStep === 'mapping' && (
+          <MappingStep
+            workflow={workflow}
+            onNext={async () => {
+              try {
+                if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
+                const recommendation = await silverApi.generateMapping(workflow.workflowId, {
+                  expected_version: currentVersion(workflow),
+                  target_project: workflow.projectId ?? seedSource.projectId,
+                  target_dataset: workflow.targetDataset ?? seedSource.targetDataset,
+                  target_table: workflow.targetTable ?? seedSource.targetTable,
+                });
+                setWorkflow((current) => ({
+                  ...current,
+                  ...demoWorkflowPatch('Mapping recomendado por backend'),
+                  mappingVersion: recommendation.source_workflow_version,
+                  activeStep: 'rules',
+                  error: undefined,
+                  backendMessage: JSON.stringify(recommendation),
+                }));
+              } catch (error) {
+                applyError(error);
+              }
+            }}
+          />
+        )}
+        {workflow.activeStep === 'rules' && (
+          <RulesStep
+            workflow={workflow}
+            onNext={async () => {
+              try {
+                if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
+                const generated = await silverApi.generateBusinessRules(workflow.workflowId, {
+                  expected_version: currentVersion(workflow),
+                  generation_reason: 'Generar reglas deterministicas iniciales para carga Bronze a Silver cat_producto.',
+                  max_rules: 8,
+                });
+                const confirmed = await silverApi.confirmBusinessRules(workflow.workflowId, {
+                  expected_version: generated.version,
+                  confirmed_by: REQUESTED_BY,
+                  confirmation_reason: 'Reglas semilla confirmadas para MVP deterministico.',
+                  selected_proposal_id: generated.business_rules?.proposal_id ?? null,
+                });
+                applyWorkflowRecord(confirmed, 'artifacts', 'Reglas generadas y confirmadas en backend');
+              } catch (error) {
+                applyError(error);
+              }
+            }}
+          />
+        )}
+        {workflow.activeStep === 'artifacts' && (
+          <ArtifactsStep
+            workflow={workflow}
+            onNext={async () => {
+              try {
+                if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
+                const reviewed = await silverApi.reviewQuality(workflow.workflowId, {
+                  expected_version: currentVersion(workflow),
+                  decision: 'APPROVED',
+                  reviewed_by: REQUESTED_BY,
+                  review_notes: 'Quality review aprobada para demo deterministica.',
+                  quality_rules: businessRules.map((rule) => ({
+                    name: rule.name,
+                    severity: rule.severity,
+                    expression: rule.expression,
+                  })),
+                });
+                const columns = seedColumns.map((column) => ({
+                  name: column.name,
+                  type: column.type,
+                  nullable: column.usage !== 'business_key',
+                  source_column: column.name,
+                  transformation: 'DIRECT_COPY',
+                }));
+                const specified = await silverApi.saveSpecification(workflow.workflowId, {
+                  expected_version: reviewed.version,
+                  mapping_version: workflow.mappingVersion ?? reviewed.mapping_version ?? 1,
+                  target: {
+                    project_id: workflow.projectId ?? seedSource.projectId,
+                    dataset_id: workflow.targetDataset ?? seedSource.targetDataset,
+                    table_id: workflow.targetTable ?? seedSource.targetTable,
+                  },
+                  columns,
+                  created_by: REQUESTED_BY,
+                  change_reason: 'Guardar especificacion Silver para generar artefactos.',
+                });
+                const specId = specified.spec_id;
+                if (!specId) throw new Error('El backend no devolvio spec_id para generar artefactos.');
+                const pkg = await silverApi.generateArtifacts(specId, {
+                  mapping_version: workflow.mappingVersion ?? specified.mapping_version ?? 1,
+                  target_project: workflow.projectId ?? seedSource.projectId,
+                  target_dataset: workflow.targetDataset ?? seedSource.targetDataset,
+                  target_table: workflow.targetTable ?? seedSource.targetTable,
+                  columns,
+                  load_strategy: {
+                    mode: 'INCREMENTAL',
+                    watermark_column: seedSource.watermark,
+                    business_key: [seedSource.businessKey],
+                  },
+                  physical_design: {
+                    partition_by: seedSource.watermark,
+                    cluster_by: [seedSource.businessKey],
+                  },
+                  source_project: workflow.projectId ?? seedSource.projectId,
+                  source_dataset: workflow.sourceDataset ?? seedSource.sourceDataset,
+                  source_table: workflow.sourceTable ?? seedSource.sourceTable,
+                  generated_by: REQUESTED_BY,
+                  quality_rules: businessRules,
+                });
+                const execution = await silverApi.createExecution({
+                  spec_id: pkg.spec_id,
+                  requested_by: REQUESTED_BY,
+                });
+                setWorkflow((current) => ({
+                  ...current,
+                  ...workflowPatchFromRecord(specified),
+                  ...demoWorkflowPatch('Artefactos y execution creados en backend'),
+                  specId: pkg.spec_id,
+                  mappingVersion: pkg.mapping_version,
+                  executionId: execution.execution_id,
+                  executionStatus: 'PENDING',
+                  activeStep: 'execution',
+                  error: undefined,
+                  backendMessage: JSON.stringify({ package: pkg, execution }),
+                }));
+              } catch (error) {
+                applyError(error);
+              }
+            }}
+          />
+        )}
+        {workflow.activeStep === 'execution' && (
+          <ExecutionStep
+            onValidate={async () => {
+              try {
+                if (!workflow.executionId) throw new Error('Primero crea execution.');
+                const result = await silverApi.validatePackage(workflow.executionId);
+                setWorkflow((current) => ({
+                  ...current,
+                  ...demoWorkflowPatch('Package validado en backend'),
+                  executionStatus: 'VALIDATED',
+                  backendMessage: JSON.stringify(result),
+                  error: undefined,
+                }));
+              } catch (error) {
+                applyError(error);
+              }
+            }}
             onSubmit={() => setShowDataprocConfirm(true)}
           />
         )}
@@ -125,13 +334,22 @@ export function App() {
                 className="primary"
                 onClick={() => {
                   setShowDataprocConfirm(false);
-                  setWorkflow((current) => ({
-                    ...current,
-                    ...demoWorkflowPatch('Submit Dataproc enviado'),
-                    status: 'EXECUTING',
-                    executionStatus: 'QUEUED',
-                    executionId: current.executionId ?? 'EXEC_CAT_PRODUCTO',
-                  }));
+                  void (async () => {
+                    try {
+                      if (!workflow.executionId) throw new Error('Primero crea execution.');
+                      const result = await silverApi.submitDataproc(workflow.executionId);
+                      setWorkflow((current) => ({
+                        ...current,
+                        ...demoWorkflowPatch('Submit Dataproc enviado al backend'),
+                        status: 'EXECUTING',
+                        executionStatus: 'QUEUED',
+                        backendMessage: JSON.stringify(result),
+                        error: undefined,
+                      }));
+                    } catch (error) {
+                      applyError(error);
+                    }
+                  })();
                 }}
               >
                 Ejecutar Dataproc
@@ -152,10 +370,12 @@ function WorkflowPanel({ workflow, statusCaption }: { workflow: WorkflowState; s
       <span className="statusPill">{statusCaption}</span>
       <dl>
         <div><dt>workflow_id</dt><dd>{workflow.workflowId ?? 'pendiente'}</dd></div>
+        <div><dt>version</dt><dd>{workflow.version ?? 'pendiente'}</dd></div>
         <div><dt>spec_id</dt><dd>{workflow.specId ?? 'pendiente'}</dd></div>
         <div><dt>execution_id</dt><dd>{workflow.executionId ?? 'pendiente'}</dd></div>
       </dl>
       {workflow.lastAction && <p className="lastAction">{workflow.lastAction}</p>}
+      {workflow.backendMessage && <pre className="backendTrace">{workflow.backendMessage}</pre>}
     </aside>
   );
 }
@@ -169,7 +389,16 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-function SourceStep({ onNext }: { onNext: () => void }) {
+function SourceStep({
+  onWorkflowCreated,
+  onError,
+}: {
+  onWorkflowCreated: (
+    record: SilverWorkflowRecord,
+    selection: Pick<WorkflowState, 'projectId' | 'sourceDataset' | 'sourceTable' | 'targetDataset' | 'targetTable'>,
+  ) => void;
+  onError: (error: unknown) => void;
+}) {
   const [projectId, setProjectId] = useState(seedSource.projectId);
   const [sourceDataset, setSourceDataset] = useState(seedSource.sourceDataset);
   const [sourceTable, setSourceTable] = useState(seedSource.sourceTable);
@@ -271,6 +500,36 @@ function SourceStep({ onNext }: { onNext: () => void }) {
 
   const targetAlreadyExists = targetTables.includes(targetTable);
 
+  async function createWorkflow() {
+    setLoading(true);
+    setCatalogStatus('Creando workflow real en backend...');
+    try {
+      const record = await silverApi.createWorkflow({
+        source: {
+          connection_id: 'CONN_BQ_DEMO',
+          project_id: projectId,
+          dataset_id: sourceDataset,
+          table_id: sourceTable,
+          fully_qualified_name: `${projectId}.${sourceDataset}.${sourceTable}`,
+        },
+        requested_by: REQUESTED_BY,
+        metadata: {
+          ui: 'business-rules-silver',
+          target_project: projectId,
+          target_dataset: targetDataset,
+          target_table: targetTable,
+          create_target_if_missing: !targetAlreadyExists,
+        },
+      });
+      onWorkflowCreated(record, { projectId, sourceDataset, sourceTable, targetDataset, targetTable });
+    } catch (error) {
+      setCatalogStatus('El backend rechazo la creacion del workflow.');
+      onError(error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <section className="grid twoColumns">
       <article className="card">
@@ -310,7 +569,7 @@ function SourceStep({ onNext }: { onNext: () => void }) {
         </span>
         <p className="catalogStatus">{loading ? 'Cargando...' : catalogStatus}</p>
         <div className="actions">
-          <button className="primary" onClick={onNext}>Crear workflow</button>
+          <button className="primary" onClick={createWorkflow}>Crear workflow</button>
           <button onClick={loadDatasets}>Buscar datasets</button>
           <button onClick={inspectTable}>Ver schema</button>
           <button onClick={resetSeed}>Cargar semilla</button>
@@ -430,7 +689,7 @@ function SchemaPreview({
   );
 }
 
-function IncrementalStep({ onNext }: { onNext: () => void }) {
+function IncrementalStep({ workflow, onNext }: { workflow: WorkflowState; onNext: () => void }) {
   return (
     <section className="card">
       <h2>Estrategia de carga</h2>
@@ -440,6 +699,7 @@ function IncrementalStep({ onNext }: { onNext: () => void }) {
         <Field label="Watermark" value={seedSource.watermark} />
         <Field label="Deduplicacion" value="producto_id + watermark" />
         <Field label="Politica registros tardios" value="Advertir y registrar excepcion" />
+        <Field label="Workflow version" value={String(currentVersion(workflow))} />
       </div>
       <div className="profileBox">
         <strong>Perfil BigQuery semilla</strong>
@@ -451,7 +711,7 @@ function IncrementalStep({ onNext }: { onNext: () => void }) {
   );
 }
 
-function MappingStep({ onNext }: { onNext: () => void }) {
+function MappingStep({ workflow, onNext }: { workflow: WorkflowState; onNext: () => void }) {
   return (
     <section className="card">
       <div className="sectionHeader">
@@ -470,12 +730,16 @@ function MappingStep({ onNext }: { onNext: () => void }) {
         ))}
       </div>
       <pre>{mappingRules[2].expression}</pre>
+      <p className="catalogStatus">
+        Target: {workflow.projectId ?? seedSource.projectId}.{workflow.targetDataset ?? seedSource.targetDataset}.
+        {workflow.targetTable ?? seedSource.targetTable}
+      </p>
       <button className="primary" onClick={onNext}>Guardar mapping</button>
     </section>
   );
 }
 
-function RulesStep({ onNext }: { onNext: () => void }) {
+function RulesStep({ workflow, onNext }: { workflow: WorkflowState; onNext: () => void }) {
   return (
     <section className="card">
       <div className="sectionHeader">
@@ -500,12 +764,13 @@ function RulesStep({ onNext }: { onNext: () => void }) {
           perfil de datos y mapping aprobado. El MVP mantiene reglas deterministicas editables.
         </span>
       </div>
+      <p className="catalogStatus">Workflow version backend: {currentVersion(workflow)}</p>
       <button className="primary" onClick={onNext}>Confirmar reglas</button>
     </section>
   );
 }
 
-function ArtifactsStep({ onNext }: { onNext: () => void }) {
+function ArtifactsStep({ workflow, onNext }: { workflow: WorkflowState; onNext: () => void }) {
   return (
     <section className="card">
       <div className="sectionHeader">
@@ -521,7 +786,10 @@ function ArtifactsStep({ onNext }: { onNext: () => void }) {
           </article>
         ))}
       </div>
-      <pre>CREATE TABLE IF NOT EXISTS seguros_silver.cat_producto (...)</pre>
+      <pre>
+        CREATE TABLE IF NOT EXISTS {workflow.targetDataset ?? seedSource.targetDataset}.
+        {workflow.targetTable ?? seedSource.targetTable} (...)
+      </pre>
     </section>
   );
 }

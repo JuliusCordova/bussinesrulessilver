@@ -13,7 +13,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -233,12 +234,25 @@ dl {
   font-weight: 800;
 }
 
-.field input {
+.field input,
+.field select {
+  background: #fff;
   border: 1px solid #e2dcd2;
   border-radius: 8px;
   font-weight: 700;
   min-height: 42px;
   padding: 0 12px;
+  width: 100%;
+}
+
+.catalogStatus {
+  background: #f7f6f4;
+  border: 1px solid #e2dcd2;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  margin: 14px 0 0;
+  padding: 12px;
 }
 
 .actions {
@@ -313,6 +327,21 @@ pre {
   display: grid;
   gap: 14px;
   margin: 28px 0;
+}
+
+.sprintNote {
+  background: #f7f6f4;
+  border: 1px dashed #b9b1a7;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  margin: 18px 0 28px;
+  padding: 16px;
+}
+
+.sprintNote span {
+  color: #65605c;
+  font-size: 13px;
 }
 
 .ruleList article,
@@ -401,4 +430,3 @@ pre {
     grid-template-columns: 1fr;
   }
 }
-

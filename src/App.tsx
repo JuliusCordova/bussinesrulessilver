@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { demoWorkflowPatch } from './api';
+import { demoWorkflowPatch, silverApi, type CatalogTableDetail } from './api';
 import { businessRules, mappingRules, seedColumns, seedSource } from './seed';
-import type { StepId, WorkflowState } from './types';
+import type { CatalogField, StepId, WorkflowState } from './types';
 
 const steps: Array<{ id: StepId; label: string; description: string }> = [
   { id: 'source', label: 'Origen y destino', description: 'Fuente Bronze y tabla Silver' },
@@ -170,34 +170,257 @@ function Field({ label, value }: { label: string; value: string }) {
 }
 
 function SourceStep({ onNext }: { onNext: () => void }) {
+  const [projectId, setProjectId] = useState(seedSource.projectId);
+  const [sourceDataset, setSourceDataset] = useState(seedSource.sourceDataset);
+  const [sourceTable, setSourceTable] = useState(seedSource.sourceTable);
+  const [targetDataset, setTargetDataset] = useState(seedSource.targetDataset);
+  const [targetTable, setTargetTable] = useState(seedSource.targetTable);
+  const [datasets, setDatasets] = useState<string[]>([]);
+  const [sourceTables, setSourceTables] = useState<string[]>([]);
+  const [targetTables, setTargetTables] = useState<string[]>([]);
+  const [tableDetail, setTableDetail] = useState<CatalogTableDetail | null>(null);
+  const [catalogStatus, setCatalogStatus] = useState<string>('Catalogo real pendiente de carga.');
+  const [loading, setLoading] = useState(false);
+
+  const schemaFields =
+    tableDetail?.schema?.fields ??
+    tableDetail?.fields ??
+    tableDetail?.columns ??
+    tableDetail?.table?.schema?.fields ??
+    tableDetail?.table?.fields ??
+    tableDetail?.table?.columns;
+
+  function normalizeList(value: unknown, preferredKeys: string[]) {
+    const list = Array.isArray(value)
+      ? value
+      : Array.isArray((value as { datasets?: unknown[] })?.datasets)
+        ? (value as { datasets: unknown[] }).datasets
+        : Array.isArray((value as { tables?: unknown[] })?.tables)
+          ? (value as { tables: unknown[] }).tables
+          : Array.isArray((value as { items?: unknown[] })?.items)
+            ? (value as { items: unknown[] }).items
+            : [];
+
+    return list
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (!item || typeof item !== 'object') return '';
+        const record = item as Record<string, unknown>;
+        for (const key of preferredKeys) {
+          if (typeof record[key] === 'string') return record[key] as string;
+        }
+        return '';
+      })
+      .filter(Boolean);
+  }
+
+  async function loadDatasets() {
+    setLoading(true);
+    setCatalogStatus('Consultando datasets reales...');
+    try {
+      const response = await silverApi.listDatasets(projectId);
+      const names = normalizeList(response, ['dataset_id', 'datasetId', 'id', 'name']);
+      setDatasets(names);
+      setCatalogStatus(`Datasets cargados: ${names.length}`);
+    } catch (error) {
+      setCatalogStatus(`No se pudo consultar catalogo real: ${(error as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadTables(datasetId: string, target = false) {
+    setLoading(true);
+    setCatalogStatus(`Consultando tablas de ${datasetId}...`);
+    try {
+      const response = await silverApi.listTables(projectId, datasetId);
+      const names = normalizeList(response, ['table_id', 'tableId', 'id', 'name']);
+      if (target) setTargetTables(names);
+      else setSourceTables(names);
+      setCatalogStatus(`Tablas cargadas para ${datasetId}: ${names.length}`);
+    } catch (error) {
+      setCatalogStatus(`No se pudo consultar tablas: ${(error as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function inspectTable() {
+    setLoading(true);
+    setCatalogStatus(`Leyendo schema real de ${sourceDataset}.${sourceTable}...`);
+    try {
+      const response = await silverApi.getTable(projectId, sourceDataset, sourceTable);
+      setTableDetail(response);
+      setCatalogStatus('Schema real cargado desde backend.');
+    } catch (error) {
+      setCatalogStatus(`No se pudo leer schema real: ${(error as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function resetSeed() {
+    setProjectId(seedSource.projectId);
+    setSourceDataset(seedSource.sourceDataset);
+    setSourceTable(seedSource.sourceTable);
+    setTargetDataset(seedSource.targetDataset);
+    setTargetTable(seedSource.targetTable);
+    setTableDetail(null);
+    setCatalogStatus('Caso semilla cargado. Puedes consultar catalogo real si el backend/CORS lo permite.');
+  }
+
+  const targetAlreadyExists = targetTables.includes(targetTable);
+
   return (
     <section className="grid twoColumns">
       <article className="card">
-        <h2>Caso semilla cat_producto</h2>
-        <p>Origen y destino probados en BigQuery para demo controlada.</p>
+        <h2>Seleccion real Bronze → Silver</h2>
+        <p>Busca datasets y tablas desde el backend Silver. El caso semilla queda como fallback operativo.</p>
         <div className="formGrid">
-          <Field label="Project ID" value={seedSource.projectId} />
-          <Field label="Dataset origen Bronze" value={seedSource.sourceDataset} />
-          <Field label="Tabla origen Bronze" value={seedSource.sourceTable} />
-          <Field label="Dataset destino Silver" value={seedSource.targetDataset} />
-          <Field label="Tabla destino Silver" value={seedSource.targetTable} />
+          <EditableField label="Project ID" value={projectId} onChange={setProjectId} />
+          <SelectField
+            label="Dataset origen Bronze"
+            value={sourceDataset}
+            options={datasets}
+            onChange={(value) => {
+              setSourceDataset(value);
+              void loadTables(value);
+            }}
+          />
+          <SelectField label="Tabla origen Bronze" value={sourceTable} options={sourceTables} onChange={setSourceTable} />
+          <SelectField
+            label="Dataset destino Silver"
+            value={targetDataset}
+            options={datasets}
+            onChange={(value) => {
+              setTargetDataset(value);
+              void loadTables(value, true);
+            }}
+          />
+          <EditableSelectField
+            label="Tabla destino Silver"
+            value={targetTable}
+            options={targetTables}
+            onChange={setTargetTable}
+            placeholder="cat_producto_silver"
+          />
         </div>
-        <span className="warningPill">Crear tabla si no existe</span>
+        <span className={targetAlreadyExists ? 'statusPill' : 'warningPill'}>
+          {targetAlreadyExists ? 'Tabla destino existente' : 'Crear tabla si no existe'}
+        </span>
+        <p className="catalogStatus">{loading ? 'Cargando...' : catalogStatus}</p>
         <div className="actions">
           <button className="primary" onClick={onNext}>Crear workflow</button>
-          <button>Ver schema</button>
+          <button onClick={loadDatasets}>Buscar datasets</button>
+          <button onClick={inspectTable}>Ver schema</button>
+          <button onClick={resetSeed}>Cargar semilla</button>
         </div>
       </article>
-      <SchemaPreview />
+      <SchemaPreview fields={schemaFields} />
     </section>
   );
 }
 
-function SchemaPreview() {
+function EditableField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  const mergedOptions = Array.from(new Set([value, ...options].filter(Boolean)));
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {mergedOptions.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function EditableSelectField({
+  label,
+  value,
+  options,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <input
+        list={`${label.replace(/\W+/g, '-')}-options`}
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <datalist id={`${label.replace(/\W+/g, '-')}-options`}>
+        {options.map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
+    </label>
+  );
+}
+
+function SchemaPreview({
+  fields,
+}: {
+  fields?: CatalogField[];
+}) {
+  const visibleFields = fields?.length
+    ? fields.map((field) => ({
+        name: field.name,
+        type: field.type,
+        usage:
+          field.name === seedSource.businessKey
+            ? 'business_key'
+            : field.name === seedSource.watermark
+              ? 'watermark'
+              : field.name === seedSource.metric
+                ? 'metric'
+                : field.name.startsWith('bronze_')
+                  ? 'traceability'
+                  : 'dimension',
+      }))
+    : seedColumns;
+
   return (
     <article className="card schemaCard">
       <h2>Schema detectado</h2>
-      {seedColumns.map((column) => (
+      {visibleFields.map((column) => (
         <div key={column.name} className={`schemaRow ${column.usage}`}>
           <strong>{column.name}</strong>
           <span>{column.type}</span>
@@ -270,6 +493,13 @@ function RulesStep({ onNext }: { onNext: () => void }) {
           </article>
         ))}
       </div>
+      <div className="sprintNote">
+        <strong>Sprint final planificado</strong>
+        <span>
+          Esquema agentico para sugerir reglas de negocio y calidad a partir del schema,
+          perfil de datos y mapping aprobado. El MVP mantiene reglas deterministicas editables.
+        </span>
+      </div>
       <button className="primary" onClick={onNext}>Confirmar reglas</button>
     </section>
   );
@@ -316,4 +546,3 @@ function ExecutionStep({ onValidate, onSubmit }: { onValidate: () => void; onSub
     </section>
   );
 }
-

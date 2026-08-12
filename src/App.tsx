@@ -239,7 +239,7 @@ export function App() {
                   data_type: column.type,
                   nullable: column.usage !== 'business_key',
                   source_column: column.name,
-                  transformation: 'DIRECT_COPY',
+                  transformation: { type: 'DIRECT' },
                 }));
                 const specified = await silverApi.saveSpecification(workflow.workflowId, {
                   expected_version: currentVersion(workflow),

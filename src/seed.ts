@@ -31,26 +31,26 @@ export const mappingRules: MappingRule[] = [
     sourceColumn: 'producto_id',
     targetColumn: 'producto_id',
     targetType: 'STRING',
-    transformationType: 'DIRECT_COPY',
+    transformationType: 'DIRECT',
   },
   {
     sourceColumn: 'prima_base',
     targetColumn: 'prima_base',
     targetType: 'NUMERIC',
-    transformationType: 'DIRECT_COPY',
+    transformationType: 'DIRECT',
   },
   {
     sourceColumn: 'periodicidad',
     targetColumn: 'prima_base_anualizada',
     targetType: 'NUMERIC',
-    transformationType: 'CASE_WHEN',
+    transformationType: 'DIRECT',
     expression: "CASE WHEN periodicidad = 'MENSUAL' THEN prima_base * 12 ELSE prima_base END",
   },
   {
     sourceColumn: 'bronze_*',
     targetColumn: 'bronze_*',
     targetType: 'STRING',
-    transformationType: 'TRACE_COPY',
+    transformationType: 'DIRECT',
   },
 ];
 

@@ -234,27 +234,16 @@ export function App() {
             onNext={async () => {
               try {
                 if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
-                const reviewed = await silverApi.reviewQuality(workflow.workflowId, {
-                  expected_version: currentVersion(workflow),
-                  decision: 'APPROVED',
-                  reviewed_by: REQUESTED_BY,
-                  review_notes: 'Quality review aprobada para demo deterministica.',
-                  quality_rules: businessRules.map((rule) => ({
-                    name: rule.name,
-                    severity: rule.severity,
-                    expression: rule.expression,
-                  })),
-                });
                 const columns = seedColumns.map((column) => ({
                   name: column.name,
-                  type: column.type,
+                  data_type: column.type,
                   nullable: column.usage !== 'business_key',
                   source_column: column.name,
                   transformation: 'DIRECT_COPY',
                 }));
                 const specified = await silverApi.saveSpecification(workflow.workflowId, {
-                  expected_version: reviewed.version,
-                  mapping_version: workflow.mappingVersion ?? reviewed.mapping_version ?? 1,
+                  expected_version: currentVersion(workflow),
+                  mapping_version: workflow.mappingVersion ?? 1,
                   target: {
                     project_id: workflow.projectId ?? seedSource.projectId,
                     dataset_id: workflow.targetDataset ?? seedSource.targetDataset,
@@ -264,10 +253,21 @@ export function App() {
                   created_by: REQUESTED_BY,
                   change_reason: 'Guardar especificacion Silver para generar artefactos.',
                 });
+                const reviewed = await silverApi.reviewQuality(workflow.workflowId, {
+                  expected_version: specified.version,
+                  decision: 'APPROVED',
+                  reviewed_by: REQUESTED_BY,
+                  review_notes: 'Quality review aprobada para demo deterministica.',
+                  quality_rules: businessRules.map((rule) => ({
+                    name: rule.name,
+                    severity: rule.severity,
+                    expression: rule.expression,
+                  })),
+                });
                 const specId = specified.spec_id;
                 if (!specId) throw new Error('El backend no devolvio spec_id para generar artefactos.');
                 const pkg = await silverApi.generateArtifacts(specId, {
-                  mapping_version: workflow.mappingVersion ?? specified.mapping_version ?? 1,
+                  mapping_version: workflow.mappingVersion ?? reviewed.mapping_version ?? specified.mapping_version ?? 1,
                   target_project: workflow.projectId ?? seedSource.projectId,
                   target_dataset: workflow.targetDataset ?? seedSource.targetDataset,
                   target_table: workflow.targetTable ?? seedSource.targetTable,
@@ -293,7 +293,7 @@ export function App() {
                 });
                 setWorkflow((current) => ({
                   ...current,
-                  ...workflowPatchFromRecord(specified),
+                  ...workflowPatchFromRecord(reviewed),
                   ...demoWorkflowPatch('Artefactos y execution creados en backend'),
                   specId: pkg.spec_id,
                   mappingVersion: pkg.mapping_version,
@@ -817,7 +817,7 @@ function ArtifactsStep({ workflow, onNext }: { workflow: WorkflowState; onNext: 
     <section className="card">
       <div className="sectionHeader">
         <h2>Artefactos generados</h2>
-        <div className="actions"><button>Quality review</button><button className="primary" onClick={onNext}>Generar package</button></div>
+        <div className="actions"><button>Quality review</button><button className="primary" onClick={onNext}>Guardar spec y generar package</button></div>
       </div>
       <div className="artifactGrid">
         {artifacts.map((artifact) => (

@@ -27,13 +27,21 @@ export type StepId =
 
 export interface WorkflowState {
   workflowId?: string;
+  version?: number;
   specId?: string;
+  mappingVersion?: number;
   executionId?: string;
   status: WorkflowStatus;
   executionStatus?: ExecutionStatus;
   activeStep: StepId;
+  projectId?: string;
+  sourceDataset?: string;
+  sourceTable?: string;
+  targetDataset?: string;
+  targetTable?: string;
   lastAction?: string;
   error?: string;
+  backendMessage?: string;
 }
 
 export interface SeedColumn {

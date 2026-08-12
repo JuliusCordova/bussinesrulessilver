@@ -312,6 +312,7 @@ export function App() {
         )}
         {workflow.activeStep === 'execution' && (
           <ExecutionStep
+            executionStatus={workflow.executionStatus}
             onValidate={async () => {
               try {
                 if (!workflow.executionId) throw new Error('Primero crea execution.');
@@ -837,8 +838,18 @@ function ArtifactsStep({ workflow, onNext }: { workflow: WorkflowState; onNext: 
   );
 }
 
-function ExecutionStep({ onValidate, onSubmit }: { onValidate: () => void; onSubmit: () => void }) {
+function ExecutionStep({
+  executionStatus,
+  onValidate,
+  onSubmit,
+}: {
+  executionStatus?: WorkflowState['executionStatus'];
+  onValidate: () => void;
+  onSubmit: () => void;
+}) {
   const flow = ['Crear execution', 'Validar package', 'Confirmar ejecucion', 'Submit Dataproc', 'Sync status', 'Ver resultado'];
+  const canSubmit = executionStatus === 'VALIDATED';
+
   return (
     <section className="card">
       <h2>Ejecucion controlada</h2>
@@ -850,9 +861,12 @@ function ExecutionStep({ onValidate, onSubmit }: { onValidate: () => void; onSub
           </article>
         ))}
       </div>
+      <p className="catalogStatus">
+        Estado requerido para ejecutar Dataproc: VALIDATED. Estado actual: {executionStatus ?? 'pendiente'}.
+      </p>
       <div className="actions">
         <button onClick={onValidate}>Validar package</button>
-        <button className="primary" onClick={onSubmit}>Ejecutar Dataproc</button>
+        <button className="primary" disabled={!canSubmit} onClick={onSubmit}>Ejecutar Dataproc</button>
       </div>
     </section>
   );

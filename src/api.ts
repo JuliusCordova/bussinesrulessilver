@@ -3,7 +3,7 @@ import type { CatalogField, WorkflowState } from './types';
 const DEFAULT_BASE_URL = 'https://silver-refinement-agent-mkqutd4koq-uc.a.run.app';
 
 export const apiConfig = {
-  baseUrl: import.meta.env.VITE_SILVER_API_URL ?? DEFAULT_BASE_URL,
+  baseUrl: import.meta.env.VITE_SILVER_API_URL ?? (import.meta.env.DEV ? '/api' : DEFAULT_BASE_URL),
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

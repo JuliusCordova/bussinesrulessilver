@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { demoWorkflowPatch, silverApi, type CatalogTableDetail, type SilverWorkflowRecord } from './api';
 import { businessRules, mappingRules, seedColumns, seedSource } from './seed';
+import { toBackendTransformation } from './transformations';
 import type { CatalogField, StepId, WorkflowState } from './types';
 
 const steps: Array<{ id: StepId; label: string; description: string }> = [
@@ -239,7 +240,7 @@ export function App() {
                   data_type: column.type,
                   nullable: column.usage !== 'business_key',
                   source_column: column.name,
-                  transformation: { type: 'DIRECT' },
+                  transformation: toBackendTransformation('DIRECT_COPY'),
                 }));
                 const specified = await silverApi.saveSpecification(workflow.workflowId, {
                   expected_version: currentVersion(workflow),

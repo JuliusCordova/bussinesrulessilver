@@ -255,6 +255,22 @@ dl {
   padding: 12px;
 }
 
+.errorBox {
+  background: #ffefeb;
+  border: 1px solid #ff2d22;
+  border-radius: 8px;
+  color: #a01812;
+  font-weight: 800;
+  margin: 0 0 18px;
+  padding: 14px;
+}
+
+.backendTrace {
+  font-size: 11px;
+  margin: 12px 0 0;
+  max-height: 180px;
+}
+
 .actions {
   display: flex;
   gap: 12px;

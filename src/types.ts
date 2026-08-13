@@ -31,6 +31,8 @@ export interface WorkflowState {
   specId?: string;
   mappingVersion?: number;
   executionId?: string;
+  batchId?: string;
+  stateMessage?: string;
   status: WorkflowStatus;
   executionStatus?: ExecutionStatus;
   activeStep: StepId;
@@ -41,6 +43,8 @@ export interface WorkflowState {
   targetTable?: string;
   lastAction?: string;
   error?: string;
+  errorDetail?: string;
+  processingLabel?: string;
   backendMessage?: string;
 }
 

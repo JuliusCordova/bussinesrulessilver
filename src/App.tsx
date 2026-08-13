@@ -46,6 +46,47 @@ function currentVersion(workflow: WorkflowState) {
   return workflow.version ?? 1;
 }
 
+function toExecutionStatus(status?: string | null): WorkflowState['executionStatus'] | undefined {
+  if (!status) return undefined;
+  const normalized = status.toUpperCase();
+  if (
+    normalized === 'PENDING' ||
+    normalized === 'VALIDATED' ||
+    normalized === 'QUEUED' ||
+    normalized === 'RUNNING' ||
+    normalized === 'SUCCEEDED' ||
+    normalized === 'FAILED' ||
+    normalized === 'CANCELLED'
+  ) {
+    return normalized;
+  }
+  return undefined;
+}
+
+function normalizeError(error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error);
+  const backendMatch = raw.match(/^Backend\s+(\d+):\s*(.*)$/s);
+
+  if (!backendMatch) {
+    return { summary: raw, detail: raw };
+  }
+
+  const [, status, detailText] = backendMatch;
+  try {
+    const parsed = JSON.parse(detailText);
+    const detail = typeof parsed.detail === 'string' ? parsed.detail : JSON.stringify(parsed.detail);
+    return {
+      summary: `Backend ${status}: ${detail}`,
+      detail: JSON.stringify(parsed, null, 2),
+    };
+  } catch {
+    return {
+      summary: `Backend ${status}: ${detailText}`,
+      detail: detailText,
+    };
+  }
+}
+
 export function App() {
   const [workflow, setWorkflow] = useState<WorkflowState>({
     status: 'DRAFT',
@@ -67,6 +108,8 @@ export function App() {
       ...demoWorkflowPatch(action),
       activeStep,
       error: undefined,
+      errorDetail: undefined,
+      processingLabel: undefined,
       backendMessage: JSON.stringify({
         workflow_id: record.workflow_id,
         version: record.version,
@@ -78,11 +121,72 @@ export function App() {
   }
 
   function applyError(error: unknown) {
+    const normalized = normalizeError(error);
     setWorkflow((current) => ({
       ...current,
-      error: (error as Error).message,
+      error: normalized.summary,
+      errorDetail: normalized.detail,
+      processingLabel: undefined,
     }));
   }
+
+  async function runAction(label: string, action: () => Promise<void>) {
+    setWorkflow((current) => ({
+      ...current,
+      processingLabel: label,
+      error: undefined,
+      errorDetail: undefined,
+    }));
+
+    try {
+      await action();
+    } catch (error) {
+      applyError(error);
+    } finally {
+      setWorkflow((current) => ({ ...current, processingLabel: undefined }));
+    }
+  }
+
+  async function syncExecutionStatus(showProcessing = true) {
+    const run = async () => {
+      if (!workflow.executionId) throw new Error('Primero crea execution.');
+      const result = await silverApi.syncExecution(workflow.executionId);
+      const executionStatus =
+        toExecutionStatus(result.execution.status) ?? toExecutionStatus(result.dataproc_state) ?? workflow.executionStatus;
+      setWorkflow((current) => ({
+        ...current,
+        ...demoWorkflowPatch('Estado Dataproc sincronizado'),
+        executionStatus,
+        status: executionStatus === 'SUCCEEDED' ? 'SUCCEEDED' : executionStatus === 'FAILED' ? 'FAILED' : current.status,
+        stateMessage: result.state_message ?? undefined,
+        backendMessage: JSON.stringify(result),
+        error: executionStatus === 'FAILED' ? (result.state_message ?? 'La ejecucion Dataproc fallo.') : undefined,
+        errorDetail: executionStatus === 'FAILED' ? JSON.stringify(result, null, 2) : undefined,
+      }));
+    };
+
+    if (showProcessing) {
+      await runAction('Sincronizando estado de Dataproc...', run);
+      return;
+    }
+
+    try {
+      await run();
+    } catch (error) {
+      applyError(error);
+    }
+  }
+
+  useEffect(() => {
+    if (workflow.activeStep !== 'execution') return undefined;
+    if (workflow.executionStatus !== 'QUEUED' && workflow.executionStatus !== 'RUNNING') return undefined;
+
+    const interval = window.setInterval(() => {
+      void syncExecutionStatus(false);
+    }, 30000);
+
+    return () => window.clearInterval(interval);
+  }, [workflow.activeStep, workflow.executionId, workflow.executionStatus]);
 
   const statusCaption = useMemo(() => {
     if (workflow.executionStatus) return workflow.executionStatus;
@@ -130,7 +234,8 @@ export function App() {
           ))}
         </ol>
 
-        {workflow.error && <p className="errorBox">{workflow.error}</p>}
+        {workflow.processingLabel && <ProcessingBox label={workflow.processingLabel} />}
+        {workflow.error && <ErrorBox summary={workflow.error} detail={workflow.errorDetail} />}
 
         {workflow.activeStep === 'source' && (
           <SourceStep
@@ -152,7 +257,7 @@ export function App() {
           <IncrementalStep
             workflow={workflow}
             onNext={async () => {
-              try {
+              await runAction('Confirmando origen y estrategia incremental...', async () => {
                 if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
                 const record = await silverApi.confirmSource(workflow.workflowId, {
                   expected_version: currentVersion(workflow),
@@ -173,9 +278,7 @@ export function App() {
                   confirmed_by: REQUESTED_BY,
                 });
                 applyWorkflowRecord(record, 'mapping', 'Origen confirmado en backend');
-              } catch (error) {
-                applyError(error);
-              }
+              });
             }}
           />
         )}
@@ -183,7 +286,7 @@ export function App() {
           <MappingStep
             workflow={workflow}
             onNext={async () => {
-              try {
+              await runAction('Generando recomendacion de mapping...', async () => {
                 if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
                 const recommendation = await silverApi.generateMapping(workflow.workflowId, {
                   expected_version: currentVersion(workflow),
@@ -199,9 +302,7 @@ export function App() {
                   error: undefined,
                   backendMessage: JSON.stringify(recommendation),
                 }));
-              } catch (error) {
-                applyError(error);
-              }
+              });
             }}
           />
         )}
@@ -209,7 +310,7 @@ export function App() {
           <RulesStep
             workflow={workflow}
             onNext={async () => {
-              try {
+              await runAction('Generando y confirmando reglas de negocio...', async () => {
                 if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
                 const generated = await silverApi.generateBusinessRules(workflow.workflowId, {
                   expected_version: currentVersion(workflow),
@@ -223,9 +324,7 @@ export function App() {
                   selected_proposal_id: generated.business_rules?.proposal_id ?? null,
                 });
                 applyWorkflowRecord(confirmed, 'artifacts', 'Reglas generadas y confirmadas en backend');
-              } catch (error) {
-                applyError(error);
-              }
+              });
             }}
           />
         )}
@@ -233,7 +332,7 @@ export function App() {
           <ArtifactsStep
             workflow={workflow}
             onNext={async () => {
-              try {
+              await runAction('Guardando especificacion y generando paquete tecnico...', async () => {
                 if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
                 const columns = seedColumns.map((column) => ({
                   name: column.name,
@@ -325,17 +424,17 @@ export function App() {
                   error: undefined,
                   backendMessage: JSON.stringify({ package: pkg, execution }),
                 }));
-              } catch (error) {
-                applyError(error);
-              }
+              });
             }}
           />
         )}
         {workflow.activeStep === 'execution' && (
           <ExecutionStep
+            batchId={workflow.batchId}
             executionStatus={workflow.executionStatus}
+            stateMessage={workflow.stateMessage}
             onValidate={async () => {
-              try {
+              await runAction('Validando package generado...', async () => {
                 if (!workflow.executionId) throw new Error('Primero crea execution.');
                 const result = await silverApi.validatePackage(workflow.executionId);
                 setWorkflow((current) => ({
@@ -344,12 +443,14 @@ export function App() {
                   executionStatus: 'VALIDATED',
                   backendMessage: JSON.stringify(result),
                   error: undefined,
+                  errorDetail: undefined,
                 }));
-              } catch (error) {
-                applyError(error);
-              }
+              });
             }}
             onSubmit={() => setShowDataprocConfirm(true)}
+            onSync={async () => {
+              await syncExecutionStatus();
+            }}
           />
         )}
       </main>
@@ -365,7 +466,7 @@ export function App() {
                 onClick={() => {
                   setShowDataprocConfirm(false);
                   void (async () => {
-                    try {
+                    await runAction('Enviando ejecucion a Dataproc Serverless...', async () => {
                       if (!workflow.executionId) throw new Error('Primero crea execution.');
                       const result = await silverApi.submitDataproc(workflow.executionId);
                       setWorkflow((current) => ({
@@ -373,12 +474,13 @@ export function App() {
                         ...demoWorkflowPatch('Submit Dataproc enviado al backend'),
                         status: 'EXECUTING',
                         executionStatus: 'QUEUED',
+                        batchId: result.batch_id,
+                        stateMessage: 'Dataproc acepto el submit. Esperando inicio del batch.',
                         backendMessage: JSON.stringify(result),
                         error: undefined,
+                        errorDetail: undefined,
                       }));
-                    } catch (error) {
-                      applyError(error);
-                    }
+                    });
                   })();
                 }}
               >
@@ -390,6 +492,33 @@ export function App() {
         </div>
       )}
     </div>
+  );
+}
+
+function ProcessingBox({ label }: { label: string }) {
+  return (
+    <section className="processingBox">
+      <span className="spinner" />
+      <div>
+        <strong>Procesando</strong>
+        <p>{label}</p>
+      </div>
+    </section>
+  );
+}
+
+function ErrorBox({ summary, detail }: { summary: string; detail?: string }) {
+  return (
+    <section className="errorBox">
+      <strong>Error de backend</strong>
+      <p>{summary}</p>
+      {detail && detail !== summary && (
+        <details>
+          <summary>Ver detalle tecnico</summary>
+          <pre>{detail}</pre>
+        </details>
+      )}
+    </section>
   );
 }
 
@@ -860,16 +989,34 @@ function ArtifactsStep({ workflow, onNext }: { workflow: WorkflowState; onNext: 
 }
 
 function ExecutionStep({
+  batchId,
   executionStatus,
+  stateMessage,
   onValidate,
   onSubmit,
+  onSync,
 }: {
+  batchId?: string;
   executionStatus?: WorkflowState['executionStatus'];
+  stateMessage?: string;
   onValidate: () => void;
   onSubmit: () => void;
+  onSync: () => void;
 }) {
   const flow = ['Crear execution', 'Validar package', 'Confirmar ejecucion', 'Submit Dataproc', 'Sync status', 'Ver resultado'];
   const canSubmit = executionStatus === 'VALIDATED';
+  const canSync = executionStatus === 'QUEUED' || executionStatus === 'RUNNING' || executionStatus === 'FAILED';
+  const canValidate = executionStatus === 'PENDING' || executionStatus === undefined;
+  const statusText =
+    executionStatus === 'QUEUED'
+      ? 'Ejecucion enviada. Dataproc esta en cola.'
+      : executionStatus === 'RUNNING'
+        ? 'Dataproc esta procesando el batch.'
+        : executionStatus === 'SUCCEEDED'
+          ? 'Ejecucion completada correctamente.'
+          : executionStatus === 'FAILED'
+            ? 'Dataproc reporto error. Revisa el detalle tecnico.'
+            : `Estado requerido para ejecutar Dataproc: VALIDATED. Estado actual: ${executionStatus ?? 'pendiente'}.`;
 
   return (
     <section className="card">
@@ -883,11 +1030,14 @@ function ExecutionStep({
         ))}
       </div>
       <p className="catalogStatus">
-        Estado requerido para ejecutar Dataproc: VALIDATED. Estado actual: {executionStatus ?? 'pendiente'}.
+        {statusText}
+        {batchId && <span className="inlineDetail">Batch: {batchId}</span>}
+        {stateMessage && <span className="inlineDetail">Detalle: {stateMessage}</span>}
       </p>
       <div className="actions">
-        <button onClick={onValidate}>Validar package</button>
+        <button disabled={!canValidate} onClick={onValidate}>Validar package</button>
         <button className="primary" disabled={!canSubmit} onClick={onSubmit}>Ejecutar Dataproc</button>
+        <button disabled={!canSync} onClick={onSync}>Sincronizar estado</button>
       </div>
     </section>
   );

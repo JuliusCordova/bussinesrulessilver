@@ -276,6 +276,7 @@ export function App() {
                   load_strategy: {
                     type: 'INCREMENTAL_WATERMARK',
                     watermark_column: seedSource.watermark,
+                    initial_watermark: seedSource.initialWatermark,
                     business_keys: [seedSource.businessKey],
                   },
                   physical_design: {
@@ -290,6 +291,7 @@ export function App() {
                     load_strategy: {
                       type: 'INCREMENTAL_WATERMARK',
                       watermark_column: seedSource.watermark,
+                      initial_watermark: seedSource.initialWatermark,
                       business_keys: [seedSource.businessKey],
                     },
                     physical_design: {

@@ -8,6 +8,7 @@ export const seedSource = {
   targetTable: 'cat_producto',
   businessKey: 'producto_id',
   watermark: 'bronze_fecha_ingesta',
+  initialWatermark: '2026-07-31T20:30:00Z',
   metric: 'prima_base',
 };
 

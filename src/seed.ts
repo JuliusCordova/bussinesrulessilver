@@ -9,6 +9,7 @@ export const seedSource = {
   businessKey: 'producto_id',
   watermark: 'bronze_fecha_ingesta',
   initialWatermark: '2026-07-31T20:30:00Z',
+  clusteringColumns: ['producto_id', 'ramo_id', 'bronze_registro_id', 'bronze_carga_id'],
   metric: 'prima_base',
 };
 

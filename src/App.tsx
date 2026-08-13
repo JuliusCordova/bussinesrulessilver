@@ -285,7 +285,7 @@ export function App() {
                       column: seedSource.watermark,
                       granularity: 'DAY',
                     },
-                    clustering_columns: [seedSource.businessKey],
+                    clustering_columns: seedSource.clusteringColumns,
                   },
                   specification: {
                     load_strategy: {
@@ -300,7 +300,7 @@ export function App() {
                         column: seedSource.watermark,
                         granularity: 'DAY',
                       },
-                      clustering_columns: [seedSource.businessKey],
+                      clustering_columns: seedSource.clusteringColumns,
                     },
                   },
                   source_project: workflow.projectId ?? seedSource.projectId,

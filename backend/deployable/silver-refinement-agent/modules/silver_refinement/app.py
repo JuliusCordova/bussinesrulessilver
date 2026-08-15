@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from modules.agentops.router import router as agentops_router
 from modules.governance.audit_router import router as audit_router
@@ -23,6 +24,13 @@ from .artifact_router import router as artifact_router
 app = FastAPI(
     title="Silver Refinement Agent API",
     version="8.1.3",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 app.include_router(artifact_router)
 app.include_router(silver_workflow_router)

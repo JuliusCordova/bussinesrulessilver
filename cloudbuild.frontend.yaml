@@ -1,0 +1,13 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.frontend
+      - --build-arg
+      - VITE_SILVER_API_URL=https://silver-refinement-agent-mkqutd4koq-uc.a.run.app
+      - -t
+      - us-central1-docker.pkg.dev/proyectopersonal-480420/dataops/business-rules-silver-ui:prod-8ea983d-nginx8080
+      - .
+images:
+  - us-central1-docker.pkg.dev/proyectopersonal-480420/dataops/business-rules-silver-ui:prod-8ea983d-nginx8080

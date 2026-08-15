@@ -1,0 +1,11 @@
+
+# Local build/runtime artifacts
+node_modules/
+dist/
+tsconfig.tsbuildinfo
+
+# Raw backend discovery dumps
+backend/source_discovery/
+*.zip
+__pycache__/
+*.pyc

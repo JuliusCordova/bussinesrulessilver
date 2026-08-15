@@ -13,6 +13,7 @@ from modules.silver_refinement.artifact_repository import ArtifactRepository
 
 from .dataproc_launcher import DataprocLauncher
 from .execution_models import (
+    BigQueryValidationResponse,
     CreateExecutionRequest,
     DataprocSubmissionResponse,
     ExecutionMonitoringResponse,
@@ -23,6 +24,7 @@ from .execution_models import (
 from .execution_repository import ExecutionRepository
 from .package_resolver import PackageResolver
 from .physical_design_materializer import PhysicalDesignMaterializer
+from .result_validator import BigQueryResultValidator
 from .watermark_repository import WatermarkRepository
 
 
@@ -35,6 +37,7 @@ class ExecutionService:
         dataproc_launcher: DataprocLauncher | None = None,
         watermark_repository: WatermarkRepository | None = None,
         physical_design_materializer: PhysicalDesignMaterializer | None = None,
+        result_validator: BigQueryResultValidator | None = None,
     ) -> None:
         self.execution_repository = execution_repository
         self.artifact_repository = artifact_repository
@@ -42,6 +45,7 @@ class ExecutionService:
         self.dataproc_launcher = dataproc_launcher
         self.watermark_repository = watermark_repository
         self.physical_design_materializer = physical_design_materializer
+        self.result_validator = result_validator or BigQueryResultValidator(self.package_resolver)
 
     def create_execution(self, request: CreateExecutionRequest) -> ExecutionRecord:
         package = self.artifact_repository.get_current(
@@ -265,14 +269,20 @@ class ExecutionService:
         launcher = self.dataproc_launcher or DataprocLauncher()
         snapshot = launcher.get_batch(execution.dataproc_batch_id)
         mapped_status = self._map_dataproc_state(snapshot.state)
-        error_message = snapshot.state_message if mapped_status == ExecutionStatus.FAILED else None
-        updated = self.execution_repository.update_monitoring(
-            execution_id,
-            status=mapped_status,
-            state_time=snapshot.state_time,
-            logs_uri=snapshot.output_uri,
-            error_message=error_message,
-        )
+
+        validation_result = None
+        if mapped_status == ExecutionStatus.SUCCEEDED:
+            validation_result = self.validate_execution_result(execution_id)
+            updated = validation_result.execution
+        else:
+            error_message = snapshot.state_message if mapped_status == ExecutionStatus.FAILED else None
+            updated = self.execution_repository.update_monitoring(
+                execution_id,
+                status=mapped_status,
+                state_time=snapshot.state_time,
+                logs_uri=snapshot.output_uri,
+                error_message=error_message,
+            )
 
         return ExecutionMonitoringResponse(
             execution=updated,
@@ -281,7 +291,41 @@ class ExecutionService:
             state_time=snapshot.state_time,
             output_uri=snapshot.output_uri,
             diagnostic_output_uri=snapshot.diagnostic_output_uri,
+            validation_result=validation_result,
         )
+
+    def validate_execution_result(self, execution_id: str) -> BigQueryValidationResponse:
+        execution = self.execution_repository.get(execution_id)
+        if execution is None:
+            raise LookupError("Ejecución no encontrada")
+        if not execution.dataproc_batch_id:
+            raise ValueError("La ejecución todavía no tiene dataproc_batch_id")
+
+        try:
+            validation = self.result_validator.validate(execution)
+            if validation.conformant:
+                updated = self.execution_repository.update_status(
+                    execution_id,
+                    ExecutionStatus.SUCCEEDED,
+                    None,
+                )
+            else:
+                updated = self.execution_repository.update_status(
+                    execution_id,
+                    ExecutionStatus.FAILED,
+                    "Validación BigQuery post-ejecución no conforme",
+                )
+        except Exception as exc:
+            self.execution_repository.update_status(
+                execution_id,
+                ExecutionStatus.FAILED,
+                str(exc),
+            )
+            raise ValueError(
+                f"Falló la validación BigQuery post-ejecución: {exc}"
+            ) from exc
+
+        return validation.model_copy(update={"execution": updated})
 
     @staticmethod
     def _validate_runtime_watermark(value: datetime | None) -> None:

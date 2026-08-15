@@ -6,7 +6,7 @@ The Business Rules Silver frontend was deployed to Cloud Run production and vali
 
 Final result: **CONFORME**
 
-This freezes the deterministic MVP production state.
+This document records the deterministic MVP production deployment and validation evidence.
 
 ## Frontend Production Service
 
@@ -61,11 +61,11 @@ The full wizard flow completed from the production frontend.
 | Dataproc execution completes | PASS |
 | Final UI state is `SUCCEEDED` | PASS |
 
-## Frozen MVP State
+## Current MVP Boundary
 
-This is the production freeze point for the deterministic MVP.
+The current production validation corresponds to the deterministic MVP.
 
-Out of scope for this freeze:
+Out of scope for this validation:
 
 1. Agentic code generation.
 2. Agentic quality rule recommendation.

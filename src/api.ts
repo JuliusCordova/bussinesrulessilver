@@ -116,6 +116,11 @@ export const silverApi = {
     request<ExecutionMonitoringResponse>(`/executions/${executionId}/sync-status`, {
       method: 'POST',
     }),
+
+  getExecutionResult: (executionId: string) =>
+    request<BigQueryValidationResponse>(`/executions/${executionId}/result`, {
+      method: 'POST',
+    }),
 };
 
 export interface SilverWorkflowRecord {
@@ -156,6 +161,7 @@ export interface ExecutionRecord {
   package_version: number;
   artifact_package_uri: string;
   status?: string;
+  error_message?: string | null;
 }
 
 export interface PackageValidationResponse {
@@ -174,10 +180,36 @@ export interface DataprocSubmissionResponse {
   operation_name?: string | null;
 }
 
+export interface BigQueryValidationCheck {
+  name: string;
+  status: 'PASS' | 'FAIL' | 'SKIPPED' | string;
+  expected?: number | string | null;
+  actual?: number | string | null;
+  details?: string | null;
+}
+
+export interface BigQueryValidationResponse {
+  execution: ExecutionRecord;
+  status: string;
+  conformant: boolean;
+  source_table?: string | null;
+  target_table: string;
+  business_keys: string[];
+  metric_column?: string | null;
+  row_count: number;
+  distinct_business_key_count?: number | null;
+  duplicate_count: number;
+  diff_count?: number | null;
+  metric_sum?: number | null;
+  checks: BigQueryValidationCheck[];
+  validated_at: string;
+}
+
 export interface ExecutionMonitoringResponse {
   execution: ExecutionRecord;
   dataproc_state: string;
   state_message?: string | null;
+  validation_result?: BigQueryValidationResponse | null;
 }
 
 export interface CatalogDatasetResponse {

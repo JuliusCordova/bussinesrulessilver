@@ -221,12 +221,11 @@ class ExecutionArtifactGeneratorService:
             column.target_column for column in included_columns if not column.nullable
         ]
         strategy = request.load_strategy
-        if strategy.type in {LoadStrategyType.MERGE, LoadStrategyType.CDC}:
-            raise ValueError(
-                f"La estrategia {strategy.type.value} requiere el ejecutor de MERGE/CDC; "
-                "no se generará un append que altere la semántica solicitada"
-            )
-        write_mode = compile_write_mode(strategy)
+        write_mode = (
+            "overwrite"
+            if strategy.type in {LoadStrategyType.MERGE, LoadStrategyType.CDC}
+            else compile_write_mode(strategy)
+        )
         incremental_filter = compile_incremental_filter(strategy)
         quality_rules = self.normalize_quality_rules(request.quality_rules)
 
@@ -609,9 +608,76 @@ def calculate_next_watermark(df):
     return str(value)
 
 
-def write_silver(df):
+def read_existing_target(spark: SparkSession, expected_columns: list[str]):
+    try:
+        existing = (
+            spark.read.format("bigquery")
+            .option("table", TARGET_TABLE)
+            .option("viewsEnabled", "true")
+            .option("materializationProject", MATERIALIZATION_PROJECT)
+            .option("materializationDataset", MATERIALIZATION_DATASET)
+            .option("optimizedEmptyProjection", "false")
+            .load()
+        )
+        missing_columns = [column for column in expected_columns if column not in existing.columns]
+        if missing_columns:
+            raise ValueError(
+                "Target existente no contiene columnas requeridas: "
+                + ", ".join(missing_columns)
+            )
+        return existing.select(*expected_columns)
+    except Exception as exc:
+        message = str(exc)
+        if "Not found" in message or "notFound" in message or "404" in message:
+            logger.warning("Target no existe; se creara con la primera carga MERGE")
+            return None
+        raise
+
+
+def deduplicate_for_merge(df):
+    business_keys = LOAD_STRATEGY.get("business_keys") or []
+    if not business_keys:
+        raise ValueError("MERGE requiere business_keys")
+
+    for column in business_keys:
+        if column not in df.columns:
+            raise ValueError(f"MERGE business_key inexistente en dataframe: {column}")
+
+    order_columns = []
+    watermark_column = LOAD_STRATEGY.get("watermark_column")
+    if watermark_column:
+        if watermark_column not in df.columns:
+            raise ValueError(f"MERGE watermark_column inexistente en dataframe: {watermark_column}")
+        order_columns.append(F.col(watermark_column).desc_nulls_last())
+
+    tie_breaker_column = LOAD_STRATEGY.get("tie_breaker_column")
+    if tie_breaker_column:
+        if tie_breaker_column not in df.columns:
+            raise ValueError(f"MERGE tie_breaker_column inexistente en dataframe: {tie_breaker_column}")
+        order_columns.append(F.col(tie_breaker_column).desc_nulls_last())
+
+    if not order_columns:
+        order_columns = [F.monotonically_increasing_id().desc()]
+
+    window = Window.partitionBy(*[F.col(column) for column in business_keys]).orderBy(*order_columns)
+    return (
+        df.withColumn("__silver_merge_rank", F.row_number().over(window))
+        .filter(F.col("__silver_merge_rank") == 1)
+        .drop("__silver_merge_rank")
+    )
+
+
+def write_silver(spark: SparkSession, df):
+    if LOAD_STRATEGY.get("type") in {"MERGE", "CDC"}:
+        expected_columns = list(df.columns)
+        existing_df = read_existing_target(spark, expected_columns)
+        merged_df = df if existing_df is None else existing_df.unionByName(df, allowMissingColumns=True)
+        output_df = deduplicate_for_merge(merged_df)
+    else:
+        output_df = df
+
     (
-        df.write.format("bigquery")
+        output_df.write.format("bigquery")
         .option("table", TARGET_TABLE)
         .option("writeMethod", "direct")
         .mode(__WRITE_MODE__)
@@ -663,7 +729,7 @@ def main() -> dict:
                 "Quality gate failed; Silver write blocked and failing rows quarantined"
             )
 
-        write_silver(silver_df)
+        write_silver(spark, silver_df)
         rows_written = silver_df.count()
         result = {
             "spec_id": SPEC_ID,

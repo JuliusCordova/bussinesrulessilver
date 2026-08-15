@@ -65,6 +65,31 @@ class DataprocSubmissionResponse(BaseModel):
     operation_name: str | None = None
 
 
+class BigQueryValidationCheck(BaseModel):
+    name: str
+    status: str
+    expected: int | float | str | None = None
+    actual: int | float | str | None = None
+    details: str | None = None
+
+
+class BigQueryValidationResponse(BaseModel):
+    execution: ExecutionRecord
+    status: str
+    conformant: bool
+    source_table: str | None = None
+    target_table: str
+    business_keys: list[str] = Field(default_factory=list)
+    metric_column: str | None = None
+    row_count: int = Field(ge=0)
+    distinct_business_key_count: int | None = Field(default=None, ge=0)
+    duplicate_count: int = Field(default=0, ge=0)
+    diff_count: int | None = Field(default=None, ge=0)
+    metric_sum: float | None = None
+    checks: list[BigQueryValidationCheck]
+    validated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class ExecutionMonitoringResponse(BaseModel):
     execution: ExecutionRecord
     dataproc_state: str
@@ -72,3 +97,4 @@ class ExecutionMonitoringResponse(BaseModel):
     state_time: datetime | None = None
     output_uri: str | None = None
     diagnostic_output_uri: str | None = None
+    validation_result: BigQueryValidationResponse | None = None

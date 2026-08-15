@@ -87,6 +87,77 @@ function normalizeError(error: unknown) {
   }
 }
 
+function toBackendQualityRules() {
+  return [
+    {
+      rule_name: 'producto_id_not_null',
+      rule_dimension: 'VALIDITY',
+      rule_type: 'NOT_NULL',
+      column_name: 'producto_id',
+      rule_parameters: {},
+      warning_threshold: 0,
+      critical_threshold: 1,
+      severity_level: 'CRITICAL',
+      active_flag: true,
+    },
+    {
+      rule_name: 'producto_id_unique',
+      rule_dimension: 'UNIQUENESS',
+      rule_type: 'UNIQUE',
+      column_name: 'producto_id',
+      rule_parameters: {},
+      warning_threshold: 0,
+      critical_threshold: 1,
+      severity_level: 'CRITICAL',
+      active_flag: true,
+    },
+    {
+      rule_name: 'moneda_allowed_values',
+      rule_dimension: 'VALIDITY',
+      rule_type: 'ALLOWED_VALUES',
+      column_name: 'moneda',
+      rule_parameters: { allowed_values: ['PEN', 'USD'] },
+      warning_threshold: 0,
+      critical_threshold: 1,
+      severity_level: 'HIGH',
+      active_flag: true,
+    },
+    {
+      rule_name: 'periodicidad_allowed_values',
+      rule_dimension: 'VALIDITY',
+      rule_type: 'ALLOWED_VALUES',
+      column_name: 'periodicidad',
+      rule_parameters: { allowed_values: ['MENSUAL', 'ANUAL'] },
+      warning_threshold: 0,
+      critical_threshold: 1,
+      severity_level: 'HIGH',
+      active_flag: true,
+    },
+    {
+      rule_name: 'prima_base_non_negative',
+      rule_dimension: 'ACCURACY',
+      rule_type: 'VALUE_RANGE',
+      column_name: 'prima_base',
+      rule_parameters: { min_value: 0, min_inclusive: true },
+      warning_threshold: 0,
+      critical_threshold: 1,
+      severity_level: 'HIGH',
+      active_flag: true,
+    },
+    {
+      rule_name: 'bronze_estado_registro_recibido',
+      rule_dimension: 'VALIDITY',
+      rule_type: 'ALLOWED_VALUES',
+      column_name: 'bronze_estado_registro',
+      rule_parameters: { allowed_values: ['RECIBIDO'] },
+      warning_threshold: 0,
+      critical_threshold: 1,
+      severity_level: 'MEDIUM',
+      active_flag: true,
+    },
+  ];
+}
+
 export function App() {
   const [workflow, setWorkflow] = useState<WorkflowState>({
     status: 'DRAFT',
@@ -358,11 +429,7 @@ export function App() {
                   decision: 'APPROVED',
                   reviewed_by: REQUESTED_BY,
                   review_notes: 'Quality review aprobada para demo deterministica.',
-                  quality_rules: businessRules.map((rule) => ({
-                    name: rule.name,
-                    severity: rule.severity,
-                    expression: rule.expression,
-                  })),
+                  quality_rules: toBackendQualityRules(),
                 });
                 const specId = specified.spec_id;
                 if (!specId) throw new Error('El backend no devolvio spec_id para generar artefactos.');
@@ -406,7 +473,7 @@ export function App() {
                   source_dataset: workflow.sourceDataset ?? seedSource.sourceDataset,
                   source_table: workflow.sourceTable ?? seedSource.sourceTable,
                   generated_by: REQUESTED_BY,
-                  quality_rules: businessRules,
+                  quality_rules: toBackendQualityRules(),
                 });
                 const execution = await silverApi.createExecution({
                   spec_id: pkg.spec_id,

@@ -8,6 +8,7 @@ from modules.silver_refinement.artifact_repository import ArtifactRepository
 
 from .dataproc_launcher import DataprocLauncher
 from .execution_models import (
+    BigQueryValidationResponse,
     CreateExecutionRequest,
     DataprocSubmissionResponse,
     ExecutionListResponse,
@@ -81,6 +82,19 @@ def sync_execution_status(
 ) -> ExecutionMonitoringResponse:
     try:
         return service.sync_execution_status(execution_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.post("/{execution_id}/result", response_model=BigQueryValidationResponse)
+def validate_execution_result(
+    execution_id: str,
+    service: ExecutionService = Depends(get_execution_service),
+) -> BigQueryValidationResponse:
+    try:
+        return service.validate_execution_result(execution_id)
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ValueError as exc:

@@ -174,7 +174,8 @@ class BigQueryResultValidator:
           {metric_expr} AS metric_sum
         FROM `{target_table}`
         """
-        return dict(next(iter(self.client.query(query).result())))
+        row = next(iter(self.client.query(query).result()))
+        return dict(row.items())
 
     def _duplicate_count(self, target_table: str, business_keys: list[str]) -> int:
         if not business_keys:

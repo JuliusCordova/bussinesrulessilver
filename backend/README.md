@@ -10,6 +10,7 @@ It exists to prevent repeating backend discovery, mixing services, or reopening 
 
 - Canonical F2 state: `2026-08-12`
 - Silver MVP execution evidence: `2026-08-13`
+- Silver backend provenance validated: `2026-08-15`
 
 ## Service Boundary
 
@@ -55,6 +56,7 @@ Purpose: create and operate the governed Bronze to Silver workflow, including ma
 
 - Service: `silver-refinement-agent`
 - API URL: `https://silver-refinement-agent-mkqutd4koq-uc.a.run.app`
+- Alternate Cloud Run URL: `https://silver-refinement-agent-913797829604.us-central1.run.app`
 - Health response observed:
 
 ```json
@@ -63,6 +65,80 @@ Purpose: create and operate the governed Bronze to Silver workflow, including ma
   "module": "silver-refinement",
   "version": "8.1.3"
 }
+```
+
+## Validated Silver Backend Cloud Run Provenance
+
+The Cloud Run service provenance was validated with:
+
+```bash
+gcloud run services describe silver-refinement-agent \
+  --project=proyectopersonal-480420 \
+  --region=us-central1 \
+  --format="yaml(metadata.annotations,spec.template.spec.containers[0].image)"
+```
+
+Validated result:
+
+```text
+Service: silver-refinement-agent
+Project: proyectopersonal-480420
+Region: us-central1
+Creator: Julio.Cordova@gmail.com
+Last modifier: Julio.Cordova@gmail.com
+Client: gcloud 578.0.0
+Ingress: all
+Max scale: 20
+```
+
+Runtime image currently deployed:
+
+```text
+us-central1-docker.pkg.dev/proyectopersonal-480420/dataops/silver-refinement-agent:qg-f7a9117
+```
+
+Build metadata:
+
+```text
+build-id: 064eed8f-b9b9-43b8-a6e2-49383590a0f2
+build-name: projects/913797829604/locations/us-central1/builds/064eed8f-b9b9-43b8-a6e2-49383590a0f2
+build-image-uri: us-central1-docker.pkg.dev/proyectopersonal-480420/cloud-run-source-deploy/silver-refinement-agent
+build-enable-automatic-updates: false
+```
+
+Source deployment ZIP:
+
+```text
+gs://run-sources-proyectopersonal-480420-us-central1/services/silver-refinement-agent/1784412769.85315-3aafaecb15734156be093e49b6f48239.zip#1784412770654417
+```
+
+Canonical conclusion:
+
+```text
+The Silver backend source is not confirmed to be in intercorp-fest-agent/main.py.
+The deployed Silver backend came from a Cloud Run source deployment ZIP in GCS and a runtime image in Artifact Registry.
+Before changing backend code, download and inspect the source ZIP above.
+```
+
+Commands to download and inspect source ZIP:
+
+```bash
+cd ~/bussinesrulessilver
+
+mkdir -p backend/source_discovery/silver-refinement-agent
+
+gsutil cp \
+  "gs://run-sources-proyectopersonal-480420-us-central1/services/silver-refinement-agent/1784412769.85315-3aafaecb15734156be093e49b6f48239.zip#1784412770654417" \
+  backend/source_discovery/silver-refinement-agent/source.zip
+
+cd backend/source_discovery/silver-refinement-agent
+unzip -o source.zip -d source
+
+find source -maxdepth 3 -type f | sort | sed -n '1,120p'
+
+grep -RInEi "pyspark|notebook|artifact|generate|load_strategy|INCREMENTAL_WATERMARK|MERGE|append|write|saveAsTable|insertInto|cat_producto" source \
+  --exclude-dir=.git \
+  --exclude-dir=__pycache__
 ```
 
 Core Silver endpoints discovered through OpenAPI:
@@ -260,7 +336,7 @@ When resuming this project:
 2. Use F2 only as the validation control for Silver output.
 3. Treat `bussinesrulessilver` as the SDD/frontend/evidence repository.
 4. Do not assume the Silver backend source is inside `intercorp-fest-agent/main.py`.
-5. Before changing backend code, locate the actual source repository/branch/image for Cloud Run service `silver-refinement-agent`.
+5. Use the validated Cloud Run provenance section above as the source of truth for locating backend source.
 6. The next real backend fix is idempotent Silver artifact generation.
 
 ## Commands To Locate Silver Backend Source
@@ -295,4 +371,5 @@ Do not repeat these actions unless there is evidence of changed code or environm
 - Use /reconciliation/drafts.
 - Treat Dataproc SUCCEEDED alone as final business success.
 - Assume intercorp-fest-agent/main.py is the Silver backend source without verifying Cloud Run image/build provenance.
+- Re-run Cloud Run service provenance discovery unless the service revision/image changes.
 ```

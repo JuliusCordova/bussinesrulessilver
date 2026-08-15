@@ -373,7 +373,7 @@ export function App() {
                   target_table: workflow.targetTable ?? seedSource.targetTable,
                   columns,
                   load_strategy: {
-                    type: 'INCREMENTAL_WATERMARK',
+                    type: 'MERGE',
                     watermark_column: seedSource.watermark,
                     initial_watermark: seedSource.initialWatermark,
                     business_keys: [seedSource.businessKey],
@@ -388,7 +388,7 @@ export function App() {
                   },
                   specification: {
                     load_strategy: {
-                      type: 'INCREMENTAL_WATERMARK',
+                      type: 'MERGE',
                       watermark_column: seedSource.watermark,
                       initial_watermark: seedSource.initialWatermark,
                       business_keys: [seedSource.businessKey],

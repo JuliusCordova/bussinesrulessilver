@@ -1,0 +1,97 @@
+substitutions:
+  _REGION: us-central1
+  _SERVICE: business-rules-silver-ui-agents-test
+  _REPOSITORY: dataops
+  _IMAGE_NAME: business-rules-silver-ui
+  _BACKEND_URL: https://silver-refinement-agent-merge-test-mkqutd4koq-uc.a.run.app
+
+steps:
+  - id: frontend-build-check
+    name: node:22-slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        npm ci
+        npm run build
+
+  - id: build-frontend-candidate
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.frontend
+      - --build-arg
+      - VITE_SILVER_API_URL=${_BACKEND_URL}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE_NAME}:agents-test-${BUILD_ID}
+      - .
+
+  - id: push-frontend-candidate
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE_NAME}:agents-test-${BUILD_ID}
+
+  - id: deploy-frontend-test
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --project=${PROJECT_ID}
+      - --region=${_REGION}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE_NAME}:agents-test-${BUILD_ID}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --port=8080
+      - --memory=512Mi
+      - --cpu=1
+      - --timeout=300
+      - --quiet
+
+  - id: smoke-frontend-backend-binding
+    name: python:3.11-slim
+    entrypoint: python
+    args:
+      - -c
+      - |
+        import re
+        import urllib.request
+
+        frontend = "https://business-rules-silver-ui-agents-test-mkqutd4koq-uc.a.run.app"
+        backend = "https://silver-refinement-agent-merge-test-mkqutd4koq-uc.a.run.app"
+
+        with urllib.request.urlopen(frontend, timeout=120) as response:
+            assert response.status == 200
+            index = response.read().decode()
+
+        match = re.search(r'<script[^>]+src="([^"]+)"', index)
+        assert match, index
+        asset_url = frontend + match.group(1)
+
+        with urllib.request.urlopen(asset_url, timeout=120) as response:
+            assert response.status == 200
+            bundle = response.read().decode()
+
+        assert backend in bundle, "Frontend bundle is not bound to the test backend"
+
+        with urllib.request.urlopen(backend + "/health", timeout=120) as response:
+            health = response.read().decode()
+
+        assert '"version":"8.2.0"' in health.replace(" ", ""), health
+        print({
+            "frontend": frontend,
+            "backend": backend,
+            "backend_version": "8.2.0",
+            "binding": "CONFORME",
+        })
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE_NAME}:agents-test-${BUILD_ID}
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1800s

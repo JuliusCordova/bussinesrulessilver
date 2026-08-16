@@ -670,7 +670,18 @@ function SourceStep({
 }: {
   onWorkflowCreated: (
     record: SilverWorkflowRecord,
-    selection: Pick<WorkflowState, 'projectId' | 'sourceDataset' | 'sourceTable' | 'targetDataset' | 'targetTable'>,
+    selection: Pick<
+      WorkflowState,
+      | 'projectId'
+      | 'sourceDataset'
+      | 'sourceTable'
+      | 'targetDataset'
+      | 'targetTable'
+      | 'sourceColumns'
+      | 'businessKeys'
+      | 'watermarkColumn'
+      | 'metricColumn'
+    >,
   ) => void;
   onError: (error: unknown) => void;
 }) {
@@ -804,7 +815,15 @@ function SourceStep({
           create_target_if_missing: !targetAlreadyExists,
         },
       });
-      onWorkflowCreated(record, { projectId, sourceDataset, sourceTable, targetDataset, targetTable });
+      const contract = inferTableContract(sourceColumns);
+      onWorkflowCreated(record, {
+        projectId,
+        sourceDataset,
+        sourceTable,
+        targetDataset,
+        targetTable,
+        ...contract,
+      });
     } catch (error) {
       setCatalogStatus('El backend rechazo la creacion del workflow.');
       onError(error);

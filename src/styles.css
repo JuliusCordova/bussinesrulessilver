@@ -836,3 +836,78 @@ button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
+
+.mappingEditor {
+  border: 1px solid #e2dcd2;
+  border-radius: 9px;
+  margin: 18px 0;
+  overflow-x: auto;
+}
+
+.mappingEditorHeader,
+.mappingEditorRow {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 56px minmax(150px, 1fr) minmax(150px, 1fr) 130px 160px 80px;
+  min-width: 900px;
+  padding: 10px 12px;
+}
+
+.mappingEditorHeader {
+  background: #202020;
+  color: white;
+}
+
+.mappingEditorRow {
+  border-top: 1px solid #e2dcd2;
+}
+
+.mappingEditorRow input:not([type='checkbox']),
+.mappingEditorRow select {
+  min-width: 0;
+  width: 100%;
+}
+
+.mappingEditorRow input[type='checkbox'] {
+  height: 20px;
+  width: 20px;
+}
+
+.mappingEvidence {
+  color: #65605c;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  grid-column: 2 / -1;
+  line-height: 1.4;
+}
+
+.mappingEvidence small,
+.mappingEvidence em {
+  font-size: 11px;
+}
+
+.mappingEvidence em {
+  color: #a32722;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.riskText {
+  color: #a36200;
+}
+
+.dangerText {
+  background: transparent;
+  border-color: #d94a43;
+  color: #b32620;
+  padding: 8px;
+}
+
+@media (max-width: 900px) {
+  .mappingEditorHeader,
+  .mappingEditorRow {
+    grid-template-columns: 48px 160px 160px 120px 140px 72px;
+  }
+}

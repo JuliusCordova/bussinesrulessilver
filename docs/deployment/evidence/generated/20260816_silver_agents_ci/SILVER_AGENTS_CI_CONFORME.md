@@ -93,3 +93,21 @@ Las pruebas cubren:
 3. Desplegar una revisión candidata del backend.
 4. Ejecutar smoke test con una tabla seleccionada.
 5. Promover a producción únicamente con evidencia conforme.
+
+
+## Verificación de integración frontend
+
+Se agregó el contrato tipado en `src/api.ts` para:
+
+- listar agentes mediante `GET /silver-agents`;
+- ejecutar agentes mediante `POST /silver-agents/{agent_name}/run`;
+- transportar schema, estrategia de carga, business keys, reglas y diseño físico.
+
+La CI fue ampliada para ejecutar también `npm ci` y `npm run build`.
+
+Resultado:
+
+- Run: `31974240487`
+- Commit: `87bd85839aed1663a71ec0317ab35d5bf24f634f`
+- Conclusion: `success`
+- URL: https://github.com/JuliusCordova/bussinesrulessilver/actions/runs/31974240487

@@ -11,6 +11,11 @@ on:
       - "backend/deployable/silver-refinement-agent/tests/test_silver_agents.py"
       - "backend/deployable/silver-refinement-agent/tests/test_result_validator.py"
       - "backend/deployable/silver-refinement-agent/requirements*.txt"
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig*.json"
+      - "vite.config.ts"
       - ".github/workflows/silver-agents-tests.yml"
 
 jobs:
@@ -41,4 +46,25 @@ jobs:
 
       - name: Run focused tests
         run: |
-          python -m pytest -q             tests/test_silver_agents.py             tests/test_result_validator.py
+          python -m pytest -q \
+            tests/test_silver_agents.py \
+            tests/test_result_validator.py
+
+  frontend-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build

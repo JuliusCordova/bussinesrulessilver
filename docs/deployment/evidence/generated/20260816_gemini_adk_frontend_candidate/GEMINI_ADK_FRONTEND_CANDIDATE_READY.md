@@ -2,80 +2,99 @@
 
 ## Status
 
-**CANDIDATE ACCESSIBLE / INTEGRATION READY**
+**FUNCTIONAL AGENT FLOW CONFORME**
 
 Date: 2026-08-16
 
-Production was not modified by this validation.
+Production was not modified by this validation. Package generation and Dataproc execution were intentionally not invoked.
 
 ## Candidate
 
-- Cloud Run service: `business-rules-silver-ui-agents-test`
-- URL: `https://business-rules-silver-ui-agents-test-mkqutd4koq-uc.a.run.app`
-- Revision: `business-rules-silver-ui-agents-test-00001-g9d`
-- Backend candidate: `silver-refinement-agent-merge-test`
-- Backend version validated previously: `8.2.0`
+- Frontend service: `business-rules-silver-ui-agents-test`
+- Frontend URL: `https://business-rules-silver-ui-agents-test-mkqutd4koq-uc.a.run.app`
+- Frontend revision: `business-rules-silver-ui-agents-test-00001-g9d`
+- Backend service: `silver-refinement-agent-merge-test`
+- Backend version: `8.2.0`
+- Cloud Build: `fbf3c586-c278-4a90-a5c0-3c0f8bb82110`
 
-## Build and deployment
+## Access correction
 
-The frontend candidate image was built and deployed by Cloud Build execution:
+The candidate build, image push and Cloud Run revision creation succeeded. Its initial smoke received HTTP 403 because the new frontend service lacked public invocation.
 
-`fbf3c586-c278-4a90-a5c0-3c0f8bb82110`
-
-The build, image push and Cloud Run revision creation completed successfully. The original smoke step failed with HTTP 403 because the new frontend service did not yet have a public invoker binding.
-
-The IAM binding was then added explicitly:
+The following IAM binding was added:
 
 - member: `allUsers`
 - role: `roles/run.invoker`
 
-This was an access configuration issue, not an application build failure.
+After correction, the frontend returned `HTTP/2 200`.
 
-## Verification after IAM correction
+## Live integration
 
-### HTTP
+The browser loaded the wizard and real backend data:
 
-The public candidate URL returned:
+- Bronze and Silver datasets;
+- source and target tables;
+- the selected `cat_producto` schema;
+- `producto_id`, `prima_base` and `bronze_fecha_ingesta`.
 
-`HTTP/2 200`
+This confirms the candidate frontend-to-backend binding.
 
-### Browser verification
+## Functional workflow
 
-The candidate rendered the Business Rules Silver wizard successfully.
+Created candidate workflow:
 
-Observed live integration evidence:
+`workflow_d9814150f4d94eed971fd094b29aefbd`
 
-- page title: `Business Rules Silver`;
-- real Bronze and Silver dataset catalogs loaded;
-- real source and target table catalogs loaded;
-- selected table schema loaded, including `producto_id`, `prima_base` and `bronze_fecha_ingesta`;
-- no frontend access error was displayed.
+### ADK table profiler
 
-Loading these catalogs and schema requires successful communication from the frontend candidate to the backend candidate. Therefore the frontend-to-backend binding is operational.
+- agent: `silver_table_profiler`
+- session: `silver-c9aed97a94644801b58b88c7f55e4d5e`
+- status: `COMPLETED`
+- table: `proyectopersonal-480420.seguros_bronce.cat_producto`
+- row count: 13
+- profiled columns: 12
+- critical fields: 4
+- candidate keys: 2
+- candidate keys: `producto_id`, `bronze_registro_id`
 
-## Agent scope included in the candidate
+The UI rendered canonical BigQuery evidence separately from the Gemini narrative output.
 
-The candidate source includes:
+### ADK quality advisor
 
-- selected-table profiling with Gemini ADK;
-- quality-rule recommendations with Gemini ADK;
-- canonical structured evidence separated from LLM narrative output;
-- explicit human approval before recommended rules enter the artifact package;
-- deterministic fallback when no agent recommendations are approved;
-- post-execution BigQuery result visualization.
+- agent: `silver_quality_rule_advisor`
+- session: `silver-43cfa1bb07a947309e4117e997f810c7`
+- status: `COMPLETED`
+- evidence candidates: 16
+- policy: every proposal requires human approval
 
-## Remaining controlled functional validation
+The advisor proposed rules for nullability, uniqueness and low-cardinality domains. Rules requiring a value sample remained explicitly marked `NEEDS_VALUE_SAMPLE`.
 
-Before production promotion, execute one end-to-end test in the candidate UI:
+### Human governance
 
-1. create a test workflow;
-2. run **Perfilar tabla con agente**;
-3. verify canonical profile evidence;
-4. run **Recomendar con Gemini ADK**;
-5. approve selected recommendations manually;
-6. generate and validate the package;
-7. stop before Dataproc unless the execution test is explicitly authorized.
+No proposal was approved automatically.
+
+Only these two critical rules were manually selected and confirmed:
+
+1. `NOT_NULL(producto_id)`
+2. `UNIQUE(producto_id)`
+
+After confirmation:
+
+- workflow version: 4
+- workflow status: `IN_PROGRESS`
+- backend message: rules generated and confirmed
+- next stage: artifacts
+
+## Safety boundary
+
+The test stopped on the artifacts screen. It did not:
+
+- generate or persist an artifact package;
+- create an execution;
+- submit Dataproc;
+- change the production frontend;
+- change the production backend.
 
 ## Conclusion
 
-The frontend candidate is publicly accessible and its live backend/catalog integration is operational. It is ready for the controlled functional agent workflow test. Production frontend and production backend remain unchanged by this candidate validation.
+The frontend candidate, backend 8.2.0 integration, Gemini ADK profiler, quality advisor, canonical evidence contract and human approval gate are operational and **CONFORME** in the candidate environment.

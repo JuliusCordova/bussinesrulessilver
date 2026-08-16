@@ -36,8 +36,14 @@ _PURPOSES = {
 
 _TOOLS = {
     "table-profiler": ["profile_selected_table"],
-    "quality-rule-advisor": ["quality_rule_evidence"],
-    "business-rule-validator": ["validate_business_rules"],
+    "quality-rule-advisor": [
+        "profile_selected_table",
+        "quality_rule_evidence",
+    ],
+    "business-rule-validator": [
+        "profile_selected_table",
+        "validate_business_rules",
+    ],
     "notebook-generator": ["build_notebook_blueprint"],
     "orchestrator": [
         "profile_selected_table",
@@ -50,19 +56,18 @@ _TOOLS = {
 
 @router.get("", response_model=list[AgentDescriptor])
 def list_silver_agents() -> list[AgentDescriptor]:
-    return [
-        AgentDescriptor(
-            name=name,
-            purpose=_PURPOSES[name],
-            model=(
-                factory().model
-                if hasattr(factory(), "model")
-                else "sequential"
-            ),
-            deterministic_tools=_TOOLS[name],
+    descriptors: list[AgentDescriptor] = []
+    for name, factory in _FACTORIES.items():
+        agent = factory()
+        descriptors.append(
+            AgentDescriptor(
+                name=name,
+                purpose=_PURPOSES[name],
+                model=str(getattr(agent, "model", "sequential")),
+                deterministic_tools=_TOOLS[name],
+            )
         )
-        for name, factory in _FACTORIES.items()
-    ]
+    return descriptors
 
 
 @router.post("/{agent_name}/run", response_model=AgentRunResponse)

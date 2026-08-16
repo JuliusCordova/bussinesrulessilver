@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 from google.adk.agents import BaseAgent
 
 from .agents import (
@@ -14,6 +14,7 @@ from .agents import (
     build_table_profiler_agent,
 )
 from .models import AgentDescriptor, AgentRunRequest, AgentRunResponse
+from .profile_report import ProfileReportService
 from .service import SilverAgentRunner
 from .tools import profile_selected_table, quality_rule_evidence
 
@@ -70,6 +71,37 @@ def list_silver_agents() -> list[AgentDescriptor]:
             )
         )
     return descriptors
+
+
+@router.post("/table-profiler/report")
+def build_table_profile_report(request: AgentRunRequest) -> Response:
+    """Return a governed PDF built from a fresh canonical BigQuery profile."""
+    try:
+        profile = profile_selected_table(
+            request.project_id,
+            request.source_dataset,
+            request.source_table,
+        )
+        content = ProfileReportService().build(profile)
+        filename = f"profile-{request.source_dataset}-{request.source_table}.pdf"
+        return Response(
+            content=content,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"',
+                "Cache-Control": "no-store",
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No fue posible generar el informe de perfilamiento: {exc}",
+        ) from exc
 
 
 @router.post("/{agent_name}/run", response_model=AgentRunResponse)

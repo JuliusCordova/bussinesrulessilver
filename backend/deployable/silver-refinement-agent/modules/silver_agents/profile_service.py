@@ -63,6 +63,7 @@ class BigQueryTableProfiler:
 
         for column in columns:
             name = column["name"]
+            normalized = name.lower()
             column["null_count"] = int(metrics.get(f"{name}__nulls", 0) or 0)
             column["distinct_count"] = int(
                 metrics.get(f"{name}__distinct", 0) or 0
@@ -73,11 +74,34 @@ class BigQueryTableProfiler:
             column["unique_ratio"] = (
                 column["distinct_count"] / row_count if row_count else 0.0
             )
+            column["critical_candidate"] = (
+                column["mode"] == "REQUIRED"
+                or normalized == "id"
+                or normalized.endswith("_id")
+                or normalized.endswith("_key")
+                or normalized.endswith("_codigo")
+            )
+            column["business_key_candidate"] = bool(
+                row_count
+                and column["null_count"] == 0
+                and column["distinct_count"] == row_count
+                and column["critical_candidate"]
+            )
 
         return {
             "table": qualified,
             "row_count": row_count,
             "columns": columns,
+            "business_key_candidates": [
+                column["name"]
+                for column in columns
+                if column["business_key_candidate"]
+            ],
+            "critical_columns": [
+                column["name"]
+                for column in columns
+                if column["critical_candidate"]
+            ],
             "partitioning": (
                 table_ref.time_partitioning.field
                 if table_ref.time_partitioning

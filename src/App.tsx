@@ -6,9 +6,9 @@ import {
   type SilverAgentRunRequest,
   type SilverWorkflowRecord,
 } from './api';
-import { businessRules, mappingRules, seedColumns, seedSource } from './seed';
+import { businessRules, seedColumns, seedSource } from './seed';
 import { toBackendTransformation } from './transformations';
-import type { CatalogField, StepId, WorkflowState } from './types';
+import type { CatalogField, MappingRule, StepId, WorkflowState } from './types';
 
 const steps: Array<{ id: StepId; label: string; description: string }> = [
   { id: 'source', label: 'Origen y destino', description: 'Fuente Bronze y tabla Silver' },
@@ -197,6 +197,49 @@ function inferProfileContract(profile: Record<string, unknown>, fallback: Catalo
     inferenceSource: 'BIGQUERY_PROFILE' as const,
     inferenceReasons,
   };
+}
+
+function directMappingFromColumns(columns: CatalogField[]): MappingRule[] {
+  return columns.map((column) => ({
+    sourceColumn: column.name,
+    targetColumn: column.name,
+    targetType: column.type,
+    transformationType: 'DIRECT',
+    include: true,
+    nullable: column.mode !== 'REQUIRED',
+    confidence: 1,
+    reason: 'Mapping directo inicial desde el schema confirmado.',
+    requiresApproval: false,
+  }));
+}
+
+function mappingFromRecommendation(columns: Array<Record<string, unknown>>): MappingRule[] {
+  return columns.map((column) => {
+    const transformation =
+      column.transformation && typeof column.transformation === 'object'
+        ? column.transformation as Record<string, unknown>
+        : {};
+    return {
+      sourceColumn: String(
+        column.source_column ??
+        (Array.isArray(transformation.source_columns) ? transformation.source_columns[0] : '') ??
+        '',
+      ),
+      targetColumn: String(column.target_column ?? ''),
+      targetType: String(column.target_type ?? 'STRING'),
+      transformationType: String(transformation.type ?? column.transformation_type ?? 'DIRECT'),
+      include: column.include !== false,
+      nullable: column.nullable !== false,
+      parameters:
+        transformation.parameters && typeof transformation.parameters === 'object'
+          ? transformation.parameters as Record<string, unknown>
+          : {},
+      confidence: typeof column.confidence === 'number' ? column.confidence : undefined,
+      reason: typeof column.reason === 'string' ? column.reason : undefined,
+      risk: typeof column.risk === 'string' ? column.risk : undefined,
+      requiresApproval: Boolean(column.requires_approval),
+    };
+  }).filter((row) => Boolean(row.sourceColumn && row.targetColumn));
 }
 
 function toBackendQualityRules(workflow: WorkflowState) {
@@ -568,8 +611,8 @@ export function App() {
         {workflow.activeStep === 'mapping' && (
           <MappingStep
             workflow={workflow}
-            onNext={async () => {
-              await runAction('Generando recomendacion de mapping...', async () => {
+            onGenerateDeterministic={async () => {
+              await runAction('Generando mapping deterministico desde el schema confirmado...', async () => {
                 if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
                 const recommendation = await silverApi.generateMapping(workflow.workflowId, {
                   expected_version: currentVersion(workflow),
@@ -579,13 +622,64 @@ export function App() {
                 });
                 setWorkflow((current) => ({
                   ...current,
-                  ...demoWorkflowPatch('Mapping recomendado por backend'),
+                  mappingRules: mappingFromRecommendation(recommendation.columns),
+                  mappingSource: 'DETERMINISTIC',
                   mappingVersion: recommendation.source_workflow_version,
-                  activeStep: 'rules',
-                  error: undefined,
+                  ...demoWorkflowPatch('Mapping deterministico generado desde tabla seleccionada'),
                   backendMessage: JSON.stringify(recommendation),
                 }));
               });
+            }}
+            onGenerateAgent={async () => {
+              await runAction('Generando recomendaciones de mapping con Gemini ADK...', async () => {
+                const response = await silverApi.runSilverAgent('mapping-advisor', buildAgentRequest(workflow));
+                const output = response.evidence ?? parseAgentJson(response.output);
+                const columns = Array.isArray(output.columns)
+                  ? output.columns.filter(
+                      (item): item is Record<string, unknown> =>
+                        Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+                    )
+                  : [];
+                if (!columns.length) throw new Error('El agente no devolvio columnas de mapping.');
+                setWorkflow((current) => ({
+                  ...current,
+                  mappingRules: mappingFromRecommendation(columns),
+                  mappingSource: 'AGENT',
+                  agentSessionId: response.session_id,
+                  ...demoWorkflowPatch('Mapping ADK generado con evidencia'),
+                  backendMessage: JSON.stringify(response),
+                }));
+              });
+            }}
+            onMappingChange={(rules) => {
+              setWorkflow((current) => ({
+                ...current,
+                mappingRules: rules,
+                mappingSource: 'USER',
+              }));
+            }}
+            onNext={() => {
+              const rules = workflow.mappingRules?.length
+                ? workflow.mappingRules
+                : directMappingFromColumns(workflow.sourceColumns ?? []);
+              const included = rules.filter((rule) => rule.include);
+              const targets = included.map((rule) => rule.targetColumn.trim());
+              if (!included.length) {
+                applyError(new Error('El mapping debe incluir al menos una columna.'));
+                return;
+              }
+              if (targets.some((target) => !target) || new Set(targets).size !== targets.length) {
+                applyError(new Error('Las columnas destino deben tener nombres unicos y no vacios.'));
+                return;
+              }
+              setWorkflow((current) => ({
+                ...current,
+                mappingRules: rules,
+                mappingSource: current.mappingSource ?? 'DIRECT',
+                mappingVersion: current.mappingVersion ?? 1,
+                activeStep: 'rules',
+                ...demoWorkflowPatch('Mapping editado y confirmado'),
+              }));
             }}
           />
         )}
@@ -653,16 +747,25 @@ export function App() {
             onNext={async () => {
               await runAction('Guardando especificacion y generando paquete tecnico...', async () => {
                 if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
-                const selectedColumns = workflow.sourceColumns ?? seedColumns;
-                const columns = selectedColumns.map((column) => ({
-                  name: column.name,
-                  data_type: column.type,
-                  nullable:
-                    !('mode' in column && column.mode === 'REQUIRED') &&
-                    !(workflow.businessKeys ?? []).includes(column.name),
-                  source_column: column.name,
-                  transformation: toBackendTransformation('DIRECT_COPY'),
-                }));
+                const mapping = workflow.mappingRules?.length
+                  ? workflow.mappingRules
+                  : directMappingFromColumns(workflow.sourceColumns ?? []);
+                const columns = mapping
+                  .filter((rule) => rule.include)
+                  .map((rule) => ({
+                    name: rule.targetColumn,
+                    data_type: rule.targetType,
+                    nullable:
+                      rule.nullable &&
+                      !(workflow.businessKeys ?? []).includes(rule.targetColumn),
+                    source_column: rule.sourceColumn,
+                    transformation: toBackendTransformation(rule.transformationType),
+                    include: true,
+                    confidence: rule.confidence,
+                    recommendation_reason: rule.reason,
+                    recommendation_risk: rule.risk,
+                    requires_approval: rule.requiresApproval ?? false,
+                  }));
                 const loadStrategy = workflow.loadStrategy === 'MERGE'
                   ? {
                       type: 'MERGE',
@@ -1467,33 +1570,147 @@ function AgentProfilePanel({
   );
 }
 
-function MappingStep({ workflow, onNext }: { workflow: WorkflowState; onNext: () => void }) {
+function MappingStep({
+  workflow,
+  onGenerateDeterministic,
+  onGenerateAgent,
+  onMappingChange,
+  onNext,
+}: {
+  workflow: WorkflowState;
+  onGenerateDeterministic: () => void;
+  onGenerateAgent: () => void;
+  onMappingChange: (rules: MappingRule[]) => void;
+  onNext: () => void;
+}) {
+  const sourceColumns = workflow.sourceColumns ?? [];
+  const rows = workflow.mappingRules?.length
+    ? workflow.mappingRules
+    : directMappingFromColumns(sourceColumns);
+  const typeOptions = Array.from(new Set(sourceColumns.map((column) => column.type)));
+  const transformations = ['DIRECT', 'TRIM', 'UPPER', 'LOWER', 'CAST', 'EXCLUDE'];
+
+  function updateRow(index: number, patch: Partial<MappingRule>) {
+    onMappingChange(rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
+  }
+
+  function addRow() {
+    const first = sourceColumns[0];
+    onMappingChange([
+      ...rows,
+      {
+        sourceColumn: first?.name ?? '',
+        targetColumn: '',
+        targetType: first?.type ?? 'STRING',
+        transformationType: 'DIRECT',
+        include: true,
+        nullable: true,
+        reason: 'Fila agregada manualmente.',
+        requiresApproval: true,
+      },
+    ]);
+  }
+
   return (
     <section className="card">
       <div className="sectionHeader">
-        <h2>Mapping Bronze → Silver</h2>
-        <button className="primary">Generar recomendaciones</button>
+        <div>
+          <h2>Mapping Bronze → Silver</h2>
+          <p>
+            Fuente: {workflow.projectId}.{workflow.sourceDataset}.{workflow.sourceTable} ·
+            Origen del mapping: {workflow.mappingSource ?? 'DIRECT'}
+          </p>
+        </div>
+        <div className="actions">
+          <button onClick={onGenerateDeterministic}>Generar deterministico</button>
+          <button className="primary" onClick={onGenerateAgent}>Recomendar con Gemini ADK</button>
+        </div>
       </div>
-      <div className="table mappingTable">
-        <strong>Origen</strong><strong>Destino</strong><strong>Tipo</strong><strong>Transformacion</strong>
-        {mappingRules.map((rule) => (
-          <div className={rule.transformationType === 'CASE_WHEN' ? 'highlight row' : 'row'} key={rule.targetColumn}>
-            <span>{rule.sourceColumn}</span>
-            <span>{rule.targetColumn}</span>
-            <span>{rule.targetType}</span>
-            <span>{rule.transformationType}</span>
-          </div>
+
+      <div className="mappingEditor">
+        <div className="mappingEditorHeader">
+          <strong>Usar</strong><strong>Origen</strong><strong>Destino</strong>
+          <strong>Tipo</strong><strong>Transformacion</strong><strong>Accion</strong>
+        </div>
+        {rows.map((row, index) => (
+          <article key={`${index}-${row.sourceColumn}-${row.targetColumn}`} className="mappingEditorRow">
+            <input
+              aria-label={`Incluir ${row.targetColumn}`}
+              type="checkbox"
+              checked={row.include}
+              onChange={(event) => updateRow(index, {
+                include: event.target.checked,
+                transformationType: event.target.checked ? row.transformationType : 'EXCLUDE',
+              })}
+            />
+            <select
+              value={row.sourceColumn}
+              onChange={(event) => {
+                const field = sourceColumns.find((column) => column.name === event.target.value);
+                updateRow(index, {
+                  sourceColumn: event.target.value,
+                  targetColumn: row.targetColumn || event.target.value,
+                  targetType: field?.type ?? row.targetType,
+                  nullable: field?.mode !== 'REQUIRED',
+                });
+              }}
+            >
+              {sourceColumns.map((column) => (
+                <option key={column.name} value={column.name}>{column.name}</option>
+              ))}
+            </select>
+            <input
+              value={row.targetColumn}
+              onChange={(event) => updateRow(index, { targetColumn: event.target.value })}
+            />
+            <select
+              value={row.targetType}
+              onChange={(event) => updateRow(index, { targetType: event.target.value })}
+            >
+              {Array.from(new Set([row.targetType, ...typeOptions])).map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+            <select
+              value={row.transformationType}
+              onChange={(event) => updateRow(index, {
+                transformationType: event.target.value,
+                include: event.target.value !== 'EXCLUDE',
+              })}
+            >
+              {transformations.map((transformation) => (
+                <option key={transformation} value={transformation}>{transformation}</option>
+              ))}
+            </select>
+            <button
+              className="dangerText"
+              onClick={() => onMappingChange(rows.filter((_, rowIndex) => rowIndex !== index))}
+            >
+              Quitar
+            </button>
+            <div className="mappingEvidence">
+              <span>{row.reason ?? 'Sin justificacion registrada.'}</span>
+              {row.confidence != null && <small>Confianza: {Math.round(row.confidence * 100)}%</small>}
+              {row.risk && <small className="riskText">Riesgo: {row.risk}</small>}
+              {row.requiresApproval && <em>REQUIERE APROBACION</em>}
+            </div>
+          </article>
         ))}
       </div>
-      <pre>{mappingRules[2].expression}</pre>
+
+      <div className="actions">
+        <button onClick={addRow}>Agregar mapping</button>
+      </div>
       <p className="catalogStatus">
-        Target: {workflow.projectId ?? seedSource.projectId}.{workflow.targetDataset ?? seedSource.targetDataset}.
+        {rows.filter((row) => row.include).length} de {rows.length} columnas incluidas · Target:{' '}
+        {workflow.projectId ?? seedSource.projectId}.{workflow.targetDataset ?? seedSource.targetDataset}.
         {workflow.targetTable ?? seedSource.targetTable}
       </p>
-      <button className="primary" onClick={onNext}>Guardar mapping</button>
+      <button className="primary" onClick={onNext}>Guardar mapping aprobado</button>
     </section>
   );
 }
+
 
 function RulesStep({
   workflow,

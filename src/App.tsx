@@ -433,13 +433,30 @@ export function App() {
             onNext={async () => {
               await runAction('Guardando especificacion y generando paquete tecnico...', async () => {
                 if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
-                const columns = seedColumns.map((column) => ({
+                const selectedColumns = workflow.sourceColumns ?? seedColumns;
+                const columns = selectedColumns.map((column) => ({
                   name: column.name,
                   data_type: column.type,
-                  nullable: column.usage !== 'business_key',
+                  nullable:
+                    column.mode !== 'REQUIRED' &&
+                    !(workflow.businessKeys ?? []).includes(column.name),
                   source_column: column.name,
                   transformation: toBackendTransformation('DIRECT_COPY'),
                 }));
+                const loadStrategy = (workflow.businessKeys ?? []).length
+                  ? {
+                      type: 'MERGE',
+                      watermark_column: workflow.watermarkColumn ?? null,
+                      initial_watermark: workflow.watermarkColumn ? seedSource.initialWatermark : null,
+                      business_keys: workflow.businessKeys,
+                    }
+                  : { type: 'FULL', business_keys: [] };
+                const physicalDesign = {
+                  partitioning: workflow.watermarkColumn
+                    ? { enabled: true, column: workflow.watermarkColumn, granularity: 'DAY' }
+                    : { enabled: false },
+                  clustering_columns: (workflow.businessKeys ?? []).slice(0, 4),
+                };
                 const specified = await silverApi.saveSpecification(workflow.workflowId, {
                   expected_version: currentVersion(workflow),
                   mapping_version: workflow.mappingVersion ?? 1,
@@ -457,7 +474,7 @@ export function App() {
                   decision: 'APPROVED',
                   reviewed_by: REQUESTED_BY,
                   review_notes: 'Quality review aprobada para demo deterministica.',
-                  quality_rules: toBackendQualityRules(),
+                  quality_rules: toBackendQualityRules(workflow),
                 });
                 const specId = specified.spec_id;
                 if (!specId) throw new Error('El backend no devolvio spec_id para generar artefactos.');
@@ -467,41 +484,17 @@ export function App() {
                   target_dataset: workflow.targetDataset ?? seedSource.targetDataset,
                   target_table: workflow.targetTable ?? seedSource.targetTable,
                   columns,
-                  load_strategy: {
-                    type: 'MERGE',
-                    watermark_column: seedSource.watermark,
-                    initial_watermark: seedSource.initialWatermark,
-                    business_keys: [seedSource.businessKey],
-                  },
-                  physical_design: {
-                    partitioning: {
-                      enabled: true,
-                      column: seedSource.watermark,
-                      granularity: 'DAY',
-                    },
-                    clustering_columns: seedSource.clusteringColumns,
-                  },
+                  load_strategy: loadStrategy,
+                  physical_design: physicalDesign,
                   specification: {
-                    load_strategy: {
-                      type: 'MERGE',
-                      watermark_column: seedSource.watermark,
-                      initial_watermark: seedSource.initialWatermark,
-                      business_keys: [seedSource.businessKey],
-                    },
-                    physical_design: {
-                      partitioning: {
-                        enabled: true,
-                        column: seedSource.watermark,
-                        granularity: 'DAY',
-                      },
-                      clustering_columns: seedSource.clusteringColumns,
-                    },
+                    load_strategy: loadStrategy,
+                    physical_design: physicalDesign,
                   },
                   source_project: workflow.projectId ?? seedSource.projectId,
                   source_dataset: workflow.sourceDataset ?? seedSource.sourceDataset,
                   source_table: workflow.sourceTable ?? seedSource.sourceTable,
                   generated_by: REQUESTED_BY,
-                  quality_rules: toBackendQualityRules(),
+                  quality_rules: toBackendQualityRules(workflow),
                 });
                 const execution = await silverApi.createExecution({
                   spec_id: pkg.spec_id,

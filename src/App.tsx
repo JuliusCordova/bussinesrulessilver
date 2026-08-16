@@ -1174,7 +1174,7 @@ function BigQueryResultPanel({ result }: { result: NonNullable<WorkflowState['va
           <article key={check.name} className={check.status.toLowerCase()}>
             <span className="checkBadge">{check.status}</span>
             <div>
-              <strong>{check.name.replaceAll('_', ' ')}</strong>
+              <strong>{check.name.replace(/_/g, ' ')}</strong>
               {(check.expected != null || check.actual != null) && (
                 <small>Esperado: {check.expected ?? 'N/A'} · Actual: {check.actual ?? 'N/A'}</small>
               )}

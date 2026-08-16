@@ -855,7 +855,7 @@ function SourceStep({
             value={targetTable}
             options={targetTables}
             onChange={setTargetTable}
-            placeholder="cat_producto_silver"
+            placeholder="tabla_silver"
           />
         </div>
         <span className={targetAlreadyExists ? 'statusPill' : 'warningPill'}>
@@ -958,11 +958,14 @@ function SchemaPreview({
         name: field.name,
         type: field.type,
         usage:
-          field.name === seedSource.businessKey
+          /_id$/i.test(field.name) && !field.name.startsWith('bronze_')
             ? 'business_key'
-            : field.name === seedSource.watermark
+            : ['TIMESTAMP', 'DATETIME', 'DATE'].includes(normalizedFieldType(field)) &&
+                /watermark|fecha_ingesta|updated|modified|timestamp|fecha/i.test(field.name)
               ? 'watermark'
-              : field.name === seedSource.metric
+              : ['INT64', 'INTEGER', 'FLOAT64', 'FLOAT', 'NUMERIC', 'BIGNUMERIC'].includes(
+                    normalizedFieldType(field),
+                  ) && !field.name.startsWith('bronze_')
                 ? 'metric'
                 : field.name.startsWith('bronze_')
                   ? 'traceability'

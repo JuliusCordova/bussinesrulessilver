@@ -90,6 +90,78 @@ def quality_rule_evidence(
     }
 
 
+def recommend_column_mappings(
+    columns_json: str,
+    profile_json: str = "{}",
+) -> dict[str, Any]:
+    """Build editable mapping recommendations from the selected table contract."""
+    columns = json.loads(columns_json)
+    profile = json.loads(profile_json or "{}")
+    profile_by_name = {
+        str(item.get("name")): item
+        for item in profile.get("columns", [])
+        if isinstance(item, dict) and item.get("name")
+    }
+    mappings: list[dict[str, Any]] = []
+
+    for column in columns:
+        name = str(column.get("name") or column.get("source_column") or "")
+        if not name:
+            continue
+        data_type = str(column.get("type") or column.get("data_type") or "STRING").upper()
+        normalized = name.lower()
+        transformation = "DIRECT"
+        confidence = 0.99
+        reason = "Mapeo directo por coincidencia exacta de nombre y tipo."
+        risk = None
+        requires_approval = False
+
+        if data_type == "STRING" and (
+            normalized.endswith("_id") or normalized in {"id", "codigo", "code"}
+        ):
+            transformation = "TRIM"
+            confidence = 0.96
+            reason = "Identificador textual: TRIM evita espacios laterales en Silver."
+        elif data_type == "STRING" and any(
+            token in normalized for token in ("tipo", "estado", "status", "categoria")
+        ):
+            transformation = "UPPER"
+            confidence = 0.84
+            reason = "Atributo categorico: UPPER propone normalizacion consistente."
+            risk = "Puede alterar valores sensibles a mayusculas/minusculas."
+            requires_approval = True
+
+        metric = profile_by_name.get(name, {})
+        mappings.append({
+            "source_column": name,
+            "target_column": name,
+            "target_type": data_type,
+            "nullable": str(column.get("mode") or "NULLABLE").upper() != "REQUIRED",
+            "include": True,
+            "transformation": {
+                "type": transformation,
+                "source_columns": [name],
+                "parameters": {},
+            },
+            "confidence": confidence,
+            "reason": reason,
+            "risk": risk,
+            "requires_approval": requires_approval,
+            "profile_evidence": {
+                "null_count": metric.get("null_count"),
+                "distinct_count": metric.get("distinct_count"),
+            } if metric else None,
+        })
+
+    return {
+        "table": profile.get("table"),
+        "columns": mappings,
+        "recommendation_engine": "gemini-adk-with-deterministic-evidence",
+        "requires_human_approval": True,
+        "policy": "Toda recomendacion es editable y requiere confirmacion humana.",
+    }
+
+
 def validate_business_rules(
     schema_json: str,
     rules_json: str,

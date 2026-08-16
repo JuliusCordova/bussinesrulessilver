@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 
 from fastapi import APIRouter, HTTPException, status
@@ -14,6 +15,7 @@ from .agents import (
 )
 from .models import AgentDescriptor, AgentRunRequest, AgentRunResponse
 from .service import SilverAgentRunner
+from .tools import profile_selected_table, quality_rule_evidence
 
 
 router = APIRouter(prefix="/silver-agents", tags=["silver-agents"])
@@ -82,7 +84,22 @@ async def run_silver_agent(
             detail=f"Agente Silver no encontrado: {agent_name}",
         )
     try:
-        return await SilverAgentRunner().run(factory(), request)
+        result = await SilverAgentRunner().run(factory(), request)
+        if agent_name in {"table-profiler", "quality-rule-advisor"}:
+            profile = profile_selected_table(
+                request.project_id,
+                request.source_dataset,
+                request.source_table,
+            )
+            result.evidence = (
+                profile
+                if agent_name == "table-profiler"
+                else quality_rule_evidence(
+                    json.dumps(profile, ensure_ascii=False),
+                    json.dumps(request.business_keys, ensure_ascii=False),
+                )
+            )
+        return result
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -129,7 +129,24 @@ steps:
         raw_output = result["output"].strip()
         raw_output = re.sub(r"^```(?:json)?\\s*", "", raw_output, flags=re.I)
         raw_output = re.sub(r"\\s*```$", "", raw_output)
-        profile = json.loads(raw_output)
+
+        profile = None
+        decoder = json.JSONDecoder()
+        for position, character in enumerate(raw_output):
+            if character != "{":
+                continue
+            try:
+                candidate, _ = decoder.raw_decode(raw_output[position:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict):
+                profile = candidate
+                break
+
+        assert profile is not None, {
+            "message": "ADK output does not contain a valid JSON object",
+            "output": raw_output[:2000],
+        }
         assert int(profile["row_count"]) > 0, profile
         assert profile.get("columns"), profile
 

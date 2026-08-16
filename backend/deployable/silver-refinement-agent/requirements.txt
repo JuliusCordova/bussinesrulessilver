@@ -8,3 +8,4 @@ google-genai
 google-auth
 pydantic
 httpx
+reportlab>=4,<5

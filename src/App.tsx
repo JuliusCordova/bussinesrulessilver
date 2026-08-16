@@ -365,15 +365,14 @@ export function App() {
                     source_project: workflow.projectId ?? seedSource.projectId,
                     source_dataset: workflow.sourceDataset ?? seedSource.sourceDataset,
                     source_table: workflow.sourceTable ?? seedSource.sourceTable,
-                    columns: seedSchemaColumns,
-                    business_key_candidates: [seedSource.businessKey],
-                    watermark_candidates: [seedSource.watermark],
-                    metric_candidates: [seedSource.metric],
-                    profile: {
-                      row_count: 13,
-                      distinct_producto_id: 13,
-                      sum_prima_base: 21390,
-                    },
+                    columns: (workflow.sourceColumns ?? seedSchemaColumns).map((column) => ({
+                      name: column.name,
+                      data_type: 'data_type' in column ? column.data_type : column.type,
+                      mode: column.mode ?? 'NULLABLE',
+                    })),
+                    business_key_candidates: workflow.businessKeys ?? [],
+                    watermark_candidates: workflow.watermarkColumn ? [workflow.watermarkColumn] : [],
+                    metric_candidates: workflow.metricColumn ? [workflow.metricColumn] : [],
                   },
                   confirmed_by: REQUESTED_BY,
                 });
@@ -414,7 +413,7 @@ export function App() {
                 if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
                 const generated = await silverApi.generateBusinessRules(workflow.workflowId, {
                   expected_version: currentVersion(workflow),
-                  generation_reason: 'Generar reglas deterministicas iniciales para carga Bronze a Silver cat_producto.',
+                  generation_reason: `Generar reglas deterministicas iniciales para ${workflow.sourceDataset}.${workflow.sourceTable}.`,
                   max_rules: 8,
                 });
                 const confirmed = await silverApi.confirmBusinessRules(workflow.workflowId, {

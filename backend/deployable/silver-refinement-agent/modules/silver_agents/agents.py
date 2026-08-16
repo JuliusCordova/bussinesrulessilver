@@ -12,7 +12,21 @@ from .tools import (
 )
 
 
+def _configure_vertex_ai() -> None:
+    project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("PROJECT_ID")
+    location = (
+        os.getenv("GOOGLE_CLOUD_LOCATION")
+        or os.getenv("GEMINI_LOCATION")
+        or "us-central1"
+    )
+    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
+    if project:
+        os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project)
+    os.environ.setdefault("GOOGLE_CLOUD_LOCATION", location)
+
+
 def _model() -> str:
+    _configure_vertex_ai()
     return os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 

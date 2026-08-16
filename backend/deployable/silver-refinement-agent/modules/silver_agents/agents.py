@@ -7,6 +7,7 @@ from google.adk.agents import LlmAgent, SequentialAgent
 from .tools import (
     build_notebook_blueprint,
     profile_selected_table,
+    recommend_column_mappings,
     quality_rule_evidence,
     validate_business_rules,
 )
@@ -43,6 +44,23 @@ def build_table_profiler_agent() -> LlmAgent:
         ),
         tools=[profile_selected_table],
         output_key="table_profile",
+    )
+
+
+def build_mapping_advisor_agent() -> LlmAgent:
+    return LlmAgent(
+        name="silver_mapping_advisor",
+        model=_model(),
+        description="Recomienda mapping editable desde el schema real y perfil BigQuery.",
+        instruction=(
+            "Solicitud gobernada: {request_json}. Perfil: {table_profile?}. "
+            "Usa recommend_column_mappings con las columnas reales de la solicitud. "
+            "No inventes columnas ni expresiones. Conserva source, target, tipo, "
+            "transformacion, confianza, razon y riesgo. Toda recomendacion queda "
+            "PENDING_APPROVAL. Devuelve exclusivamente JSON valido."
+        ),
+        tools=[recommend_column_mappings],
+        output_key="mapping_recommendations",
     )
 
 
@@ -110,6 +128,7 @@ def build_silver_orchestrator() -> SequentialAgent:
         ),
         sub_agents=[
             build_table_profiler_agent(),
+            build_mapping_advisor_agent(),
             build_quality_rule_advisor_agent(),
             build_business_rule_validator_agent(),
             build_notebook_generator_agent(),

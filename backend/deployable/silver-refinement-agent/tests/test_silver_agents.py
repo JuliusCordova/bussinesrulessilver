@@ -10,6 +10,7 @@ from modules.silver_agents.agents import (
     build_table_profiler_agent,
 )
 from modules.silver_agents.models import AgentRunRequest
+from modules.silver_agents.profile_report import ProfileReportService
 from modules.silver_agents.service import SilverAgentRunner
 from modules.silver_agents.tools import (
     build_notebook_blueprint,
@@ -114,3 +115,27 @@ def test_runner_builds_complete_shared_state() -> None:
     assert notebook_spec["columns"][0]["name"] == "customer_id"
     assert notebook_spec["load_strategy"]["business_keys"] == ["customer_id"]
     assert json.loads(state["business_rules_json"])[0]["rule_type"] == "NOT_NULL"
+
+
+def test_profile_report_is_a_valid_pdf() -> None:
+    profile = {
+        "table": "project.bronze.customer",
+        "row_count": 10,
+        "business_key_candidates": ["customer_id"],
+        "critical_columns": ["customer_id"],
+        "partitioning": "ingestion_timestamp",
+        "columns": [{
+            "name": "customer_id",
+            "type": "STRING",
+            "mode": "REQUIRED",
+            "null_count": 0,
+            "null_ratio": 0.0,
+            "distinct_count": 10,
+            "unique_ratio": 1.0,
+            "critical_candidate": True,
+            "business_key_candidate": True,
+        }],
+    }
+    content = ProfileReportService().build(profile)
+    assert content.startswith(b"%PDF-")
+    assert len(content) > 1500

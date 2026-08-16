@@ -81,6 +81,9 @@ steps:
             "Generar informe PDF",
             "Estrategia de carga inferida y editable",
             "Validacion explicada del perfil y contrato",
+            "Generar deterministico",
+            "Recomendar con Gemini ADK",
+            "Guardar mapping aprobado",
         ):
             assert expected_text in bundle, f"Missing candidate UI capability: {expected_text}"
 

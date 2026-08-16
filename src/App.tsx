@@ -581,6 +581,9 @@ export function App() {
                     : { enabled: false },
                   clustering_columns: (workflow.businessKeys ?? []).slice(0, 4),
                 };
+                const qualityRules = workflow.approvedQualityRules?.length
+                  ? workflow.approvedQualityRules
+                  : toBackendQualityRules(workflow);
                 const specified = await silverApi.saveSpecification(workflow.workflowId, {
                   expected_version: currentVersion(workflow),
                   mapping_version: workflow.mappingVersion ?? 1,
@@ -597,8 +600,10 @@ export function App() {
                   expected_version: specified.version,
                   decision: 'APPROVED',
                   reviewed_by: REQUESTED_BY,
-                  review_notes: 'Quality review aprobada para demo deterministica.',
-                  quality_rules: toBackendQualityRules(workflow),
+                  review_notes: workflow.approvedQualityRules?.length
+                    ? 'Reglas recomendadas por agente y aprobadas por usuario.'
+                    : 'Fallback deterministico aprobado para MVP.',
+                  quality_rules: qualityRules,
                 });
                 const specId = specified.spec_id;
                 if (!specId) throw new Error('El backend no devolvio spec_id para generar artefactos.');
@@ -618,7 +623,7 @@ export function App() {
                   source_dataset: workflow.sourceDataset ?? seedSource.sourceDataset,
                   source_table: workflow.sourceTable ?? seedSource.sourceTable,
                   generated_by: REQUESTED_BY,
-                  quality_rules: toBackendQualityRules(workflow),
+                  quality_rules: qualityRules,
                 });
                 const execution = await silverApi.createExecution({
                   spec_id: pkg.spec_id,

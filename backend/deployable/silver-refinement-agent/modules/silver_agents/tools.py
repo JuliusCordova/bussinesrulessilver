@@ -24,40 +24,67 @@ def profile_selected_table(
     return BigQueryTableProfiler().profile(project_id, dataset_id, table_id)
 
 
-def quality_rule_evidence(profile_json: str) -> dict[str, Any]:
-    """Derive evidence-backed rule candidates from a table profile."""
+def quality_rule_evidence(
+    profile_json: str,
+    business_keys_json: str = "[]",
+) -> dict[str, Any]:
+    """Derive evidence-backed null, uniqueness, and domain rule candidates."""
     profile = json.loads(profile_json)
+    declared_keys = set(json.loads(business_keys_json))
     row_count = int(profile.get("row_count", 0) or 0)
     candidates: list[dict[str, Any]] = []
+
     for column in profile.get("columns", []):
         name = column["name"]
         nulls = int(column.get("null_count", 0) or 0)
         distinct = int(column.get("distinct_count", 0) or 0)
-        if row_count and nulls == 0:
+        critical = bool(column.get("critical_candidate")) or name in declared_keys
+
+        if critical:
             candidates.append({
                 "rule_type": "NOT_NULL",
                 "column_name": name,
-                "evidence": "No se observaron nulos.",
-                "confidence": 0.85,
+                "severity_level": "CRITICAL",
+                "current_status": "FAILING" if nulls else "PASSING",
+                "evidence": (
+                    f"Campo crítico con {nulls} nulos observados."
+                    if nulls
+                    else "Campo crítico sin nulos observados; proteger preventivamente."
+                ),
+                "confidence": 0.95 if name in declared_keys else 0.85,
             })
-        if row_count and distinct == row_count:
+
+        if row_count and (name in declared_keys or distinct == row_count):
+            duplicate_count = max(row_count - distinct, 0)
             candidates.append({
                 "rule_type": "UNIQUE",
                 "column_name": name,
-                "evidence": "La cardinalidad coincide con el total de filas.",
-                "confidence": 0.8,
+                "severity_level": "CRITICAL" if name in declared_keys else "HIGH",
+                "current_status": "FAILING" if duplicate_count else "PASSING",
+                "evidence": (
+                    f"Business key declarada; se estiman {duplicate_count} duplicados."
+                    if name in declared_keys
+                    else "La cardinalidad observada coincide con el total de filas."
+                ),
+                "confidence": 0.98 if name in declared_keys else 0.8,
             })
-        if 0 < distinct <= 20:
+
+        if 0 < distinct <= 20 and not critical:
             candidates.append({
                 "rule_type": "ALLOWED_VALUES",
                 "column_name": name,
+                "severity_level": "MEDIUM",
+                "current_status": "NEEDS_VALUE_SAMPLE",
                 "evidence": f"Dominio observado de baja cardinalidad: {distinct}.",
                 "confidence": 0.7,
                 "requires_value_sampling": True,
             })
+
     return {
         "table": profile.get("table"),
         "row_count": row_count,
+        "business_key_candidates": profile.get("business_key_candidates", []),
+        "critical_columns": profile.get("critical_columns", []),
         "candidates": candidates,
         "policy": "Toda propuesta requiere aprobación humana.",
     }

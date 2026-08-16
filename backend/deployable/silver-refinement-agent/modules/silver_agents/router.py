@@ -8,6 +8,7 @@ from google.adk.agents import BaseAgent
 
 from .agents import (
     build_business_rule_validator_agent,
+    build_mapping_advisor_agent,
     build_notebook_generator_agent,
     build_quality_rule_advisor_agent,
     build_silver_orchestrator,
@@ -16,13 +17,14 @@ from .agents import (
 from .models import AgentDescriptor, AgentRunRequest, AgentRunResponse
 from .profile_report import ProfileReportService
 from .service import SilverAgentRunner
-from .tools import profile_selected_table, quality_rule_evidence
+from .tools import profile_selected_table, quality_rule_evidence, recommend_column_mappings
 
 
 router = APIRouter(prefix="/silver-agents", tags=["silver-agents"])
 
 _FACTORIES: dict[str, Callable[[], BaseAgent]] = {
     "table-profiler": build_table_profiler_agent,
+    "mapping-advisor": build_mapping_advisor_agent,
     "quality-rule-advisor": build_quality_rule_advisor_agent,
     "business-rule-validator": build_business_rule_validator_agent,
     "notebook-generator": build_notebook_generator_agent,
@@ -31,6 +33,7 @@ _FACTORIES: dict[str, Callable[[], BaseAgent]] = {
 
 _PURPOSES = {
     "table-profiler": "Perfila schema, nulos, cardinalidad y claves candidatas.",
+    "mapping-advisor": "Propone mapping editable desde schema y perfil reales.",
     "quality-rule-advisor": "Propone reglas de calidad con evidencia.",
     "business-rule-validator": "Valida reglas contra schema y contrato.",
     "notebook-generator": "Genera blueprint de notebook gobernado.",
@@ -39,6 +42,7 @@ _PURPOSES = {
 
 _TOOLS = {
     "table-profiler": ["profile_selected_table"],
+    "mapping-advisor": ["profile_selected_table", "recommend_column_mappings"],
     "quality-rule-advisor": [
         "profile_selected_table",
         "quality_rule_evidence",
@@ -117,20 +121,24 @@ async def run_silver_agent(
         )
     try:
         result = await SilverAgentRunner().run(factory(), request)
-        if agent_name in {"table-profiler", "quality-rule-advisor"}:
+        if agent_name in {"table-profiler", "mapping-advisor", "quality-rule-advisor"}:
             profile = profile_selected_table(
                 request.project_id,
                 request.source_dataset,
                 request.source_table,
             )
-            result.evidence = (
-                profile
-                if agent_name == "table-profiler"
-                else quality_rule_evidence(
+            if agent_name == "table-profiler":
+                result.evidence = profile
+            elif agent_name == "mapping-advisor":
+                result.evidence = recommend_column_mappings(
+                    json.dumps(request.columns, ensure_ascii=False),
+                    json.dumps(profile, ensure_ascii=False),
+                )
+            else:
+                result.evidence = quality_rule_evidence(
                     json.dumps(profile, ensure_ascii=False),
                     json.dumps(request.business_keys, ensure_ascii=False),
                 )
-            )
         return result
     except ValueError as exc:
         raise HTTPException(

@@ -1117,7 +1117,7 @@ function SourceStep({
         <div className="actions">
           <button className="primary" onClick={createWorkflow}>Crear workflow</button>
           <button onClick={loadDatasets}>Buscar datasets</button>
-          <button onClick={inspectTable}>Ver schema</button>
+          <button onClick={() => void inspectTable()}>Ver schema</button>
           <button onClick={resetSeed}>Cargar semilla</button>
         </div>
       </article>

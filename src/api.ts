@@ -23,6 +23,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const response = await fetch(`${apiConfig.baseUrl}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Backend ${response.status}: ${detail}`);
+  }
+  return response.blob();
+}
+
 export const silverApi = {
   health: () => request<{ status: string; module: string; version: string }>('/health'),
 
@@ -127,6 +142,12 @@ export const silverApi = {
 
   runSilverAgent: (agentName: SilverAgentName, payload: SilverAgentRunRequest) =>
     request<SilverAgentRunResponse>(`/silver-agents/${agentName}/run`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  generateTableProfileReport: (payload: SilverAgentRunRequest) =>
+    requestBlob('/silver-agents/table-profiler/report', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
@@ -272,7 +293,7 @@ export interface CatalogTablesResponse {
 }
 
 export interface CatalogTableDetail {
-  schema?: {
+  schema?: CatalogField[] | {
     fields?: CatalogField[];
   };
   fields?: CatalogField[];
@@ -286,6 +307,16 @@ export interface CatalogTableDetail {
   };
   row_count?: number;
   numRows?: number;
+  partitioning?: string | null;
+  clustering_columns?: string[];
+}
+
+export interface CatalogBackendField {
+  name: string;
+  type?: string;
+  data_type?: string;
+  mode?: string;
+  description?: string;
 }
 
 export function demoWorkflowPatch(action: string): Partial<WorkflowState> {

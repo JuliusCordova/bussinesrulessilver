@@ -25,10 +25,12 @@ class SilverAgentRunner:
         user_id: str = "business-rules-silver",
     ) -> AgentRunResponse:
         session_id = f"silver-{uuid.uuid4().hex}"
+        payload = self._payload(request)
         await self.session_service.create_session(
             app_name=self.APP_NAME,
             user_id=user_id,
             session_id=session_id,
+            state=self._initial_state(payload),
         )
         runner = Runner(
             agent=agent,
@@ -39,7 +41,7 @@ class SilverAgentRunner:
             role="user",
             parts=[
                 types.Part(
-                    text=json.dumps(self._payload(request), ensure_ascii=False)
+                    text=json.dumps(payload, ensure_ascii=False)
                 )
             ],
         )
@@ -72,34 +74,76 @@ class SilverAgentRunner:
 
     @staticmethod
     def _payload(request: AgentRunRequest) -> dict[str, Any]:
+        target_project = request.target_project_id or request.project_id
         source = ".".join([
             request.project_id,
             request.source_dataset,
             request.source_table,
         ])
         target = ".".join([
-            request.project_id,
+            target_project,
             request.target_dataset,
             request.target_table,
         ])
+        load_strategy = dict(request.load_strategy)
+        if not load_strategy:
+            load_strategy = {
+                "type": "MERGE" if request.business_keys else "FULL",
+                "business_keys": request.business_keys,
+                "watermark_column": request.watermark_column,
+            }
+        else:
+            load_strategy.setdefault("business_keys", request.business_keys)
+            load_strategy.setdefault("watermark_column", request.watermark_column)
+
+        notebook_spec = {
+            "source_project": request.project_id,
+            "source_dataset": request.source_dataset,
+            "source_table": request.source_table,
+            "target_project": target_project,
+            "target_dataset": request.target_dataset,
+            "target_table": request.target_table,
+            "columns": request.columns,
+            "load_strategy": load_strategy,
+            "physical_design": request.physical_design,
+            "quality_rules": request.approved_quality_rules,
+        }
         return {
             "task": "Diseñar pipeline gobernado Bronze-to-Silver",
             "project_id": request.project_id,
             "source_dataset": request.source_dataset,
             "source_table": request.source_table,
             "source": source,
-            "target_project": request.project_id,
+            "target_project": target_project,
             "target_dataset": request.target_dataset,
             "target_table": request.target_table,
             "target": target,
+            "columns": request.columns,
+            "load_strategy": load_strategy,
             "business_keys": request.business_keys,
             "watermark_column": request.watermark_column,
             "business_rules": request.business_rules,
             "approved_quality_rules": request.approved_quality_rules,
+            "notebook_spec": notebook_spec,
             "context": request.context,
             "constraints": {
                 "human_approval_required": True,
                 "no_rag": True,
                 "post_execution_bigquery_validation": True,
             },
+        }
+
+    @staticmethod
+    def _initial_state(payload: dict[str, Any]) -> dict[str, str]:
+        return {
+            "request_json": json.dumps(payload, ensure_ascii=False),
+            "business_keys_json": json.dumps(
+                payload["business_keys"], ensure_ascii=False
+            ),
+            "business_rules_json": json.dumps(
+                payload["business_rules"], ensure_ascii=False
+            ),
+            "notebook_spec_json": json.dumps(
+                payload["notebook_spec"], ensure_ascii=False
+            ),
         }

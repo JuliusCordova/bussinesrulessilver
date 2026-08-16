@@ -121,7 +121,55 @@ export const silverApi = {
     request<BigQueryValidationResponse>(`/executions/${executionId}/result`, {
       method: 'POST',
     }),
+
+  listSilverAgents: () =>
+    request<SilverAgentDescriptor[]>('/silver-agents'),
+
+  runSilverAgent: (agentName: SilverAgentName, payload: SilverAgentRunRequest) =>
+    request<SilverAgentRunResponse>(`/silver-agents/${agentName}/run`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };
+
+export type SilverAgentName =
+  | 'table-profiler'
+  | 'quality-rule-advisor'
+  | 'business-rule-validator'
+  | 'notebook-generator'
+  | 'orchestrator';
+
+export interface SilverAgentDescriptor {
+  name: SilverAgentName;
+  purpose: string;
+  model: string;
+  deterministic_tools: string[];
+}
+
+export interface SilverAgentRunRequest {
+  project_id: string;
+  source_dataset: string;
+  source_table: string;
+  target_project_id?: string | null;
+  target_dataset: string;
+  target_table: string;
+  columns: Array<Record<string, unknown>>;
+  load_strategy: Record<string, unknown>;
+  physical_design?: Record<string, unknown>;
+  business_keys: string[];
+  watermark_column?: string | null;
+  business_rules?: Array<Record<string, unknown>>;
+  approved_quality_rules?: Array<Record<string, unknown>>;
+  context?: string | null;
+}
+
+export interface SilverAgentRunResponse {
+  agent_name: string;
+  session_id: string;
+  status: string;
+  output: string;
+  events: number;
+}
 
 export interface SilverWorkflowRecord {
   workflow_id: string;

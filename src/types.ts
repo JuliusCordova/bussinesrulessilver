@@ -46,6 +46,27 @@ export interface WorkflowState {
   errorDetail?: string;
   processingLabel?: string;
   backendMessage?: string;
+  validationResult?: {
+    status: string;
+    conformant: boolean;
+    source_table?: string | null;
+    target_table: string;
+    business_keys: string[];
+    metric_column?: string | null;
+    row_count: number;
+    distinct_business_key_count?: number | null;
+    duplicate_count: number;
+    diff_count?: number | null;
+    metric_sum?: number | null;
+    checks: Array<{
+      name: string;
+      status: string;
+      expected?: number | string | null;
+      actual?: number | string | null;
+      details?: string | null;
+    }>;
+    validated_at: string;
+  };
 }
 
 export interface SeedColumn {

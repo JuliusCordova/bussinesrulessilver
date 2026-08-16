@@ -6,7 +6,7 @@
 
 Date: 2026-08-16
 
-Production was not modified by this validation. Package generation and Dataproc execution were intentionally not invoked.
+Production was not modified by this validation. The candidate package was generated and validated; Dataproc execution was intentionally not invoked.
 
 ## Candidate
 
@@ -85,12 +85,26 @@ After confirmation:
 - backend message: rules generated and confirmed
 - next stage: artifacts
 
+## Package generation and validation
+
+- workflow version: `6`
+- spec: `spec_30225060cb024f3e840f585660fb59c8`
+- execution: `exec_5e196477105c4ca2b178cfd79e7cde19`
+- execution status: `VALIDATED`
+- mapping version: `1`
+- package version: `1`
+- load strategy: `MERGE`
+- business key: `producto_id`
+- watermark: `bronze_fecha_ingesta`
+- files validated: `8`
+- package hash: `sha256:3ec061281fee1f50875a2fcdfc64f6489c8e15a843501c3ebeaaca6f6073f472`
+
+The generated specification and PySpark script contain only the two manually approved quality rules. The generated DDL partitions by `bronze_fecha_ingesta` and clusters by `producto_id`.
+
 ## Safety boundary
 
-The test stopped on the artifacts screen. It did not:
+The test stopped after package validation. It did not:
 
-- generate or persist an artifact package;
-- create an execution;
 - submit Dataproc;
 - change the production frontend;
 - change the production backend.

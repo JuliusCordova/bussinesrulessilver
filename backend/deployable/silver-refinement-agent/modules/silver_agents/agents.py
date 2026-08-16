@@ -22,9 +22,10 @@ def build_table_profiler_agent() -> LlmAgent:
         model=_model(),
         description="Perfila la tabla BigQuery seleccionada con métricas verificables.",
         instruction=(
-            "Usa profile_selected_table exactamente una vez con la tabla indicada. "
-            "No inventes métricas. Devuelve JSON válido con schema, cardinalidades, "
-            "nulos, claves candidatas, partición, clustering y alertas observables."
+            "Solicitud gobernada: {request_json}. "
+            "Usa profile_selected_table exactamente una vez para la tabla source. "
+            "No inventes métricas. Devuelve exclusivamente JSON válido con schema, "
+            "cardinalidades, nulos, claves candidatas, partición y clustering."
         ),
         tools=[profile_selected_table],
         output_key="table_profile",
@@ -37,12 +38,13 @@ def build_quality_rule_advisor_agent() -> LlmAgent:
         model=_model(),
         description="Recomienda reglas de calidad basadas en perfilamiento.",
         instruction=(
-            "Obtén el perfil con profile_selected_table cuando no esté disponible "
-            "en el contexto y luego llama quality_rule_evidence. Pasa también las "
-            "business_keys declaradas. Los campos críticos con nulos deben producir "
-            "una propuesta NOT_NULL en estado FAILING; las claves deben evaluar "
-            "NOT_NULL y UNIQUE. Propón solo reglas respaldadas por evidencia. Cada "
-            "regla queda PENDING_APPROVAL y la respuesta debe ser JSON válido."
+            "Solicitud: {request_json}. Perfil previo: {table_profile?}. "
+            "Si el perfil no está disponible, obtenlo con profile_selected_table. "
+            "Luego llama quality_rule_evidence usando el perfil JSON y "
+            "{business_keys_json}. Los campos críticos con nulos deben producir "
+            "NOT_NULL en estado FAILING; las claves deben evaluar NOT_NULL y UNIQUE. "
+            "Propón solo reglas con evidencia, déjalas PENDING_APPROVAL y devuelve "
+            "exclusivamente JSON válido."
         ),
         tools=[profile_selected_table, quality_rule_evidence],
         output_key="quality_rule_proposals",
@@ -55,10 +57,12 @@ def build_business_rule_validator_agent() -> LlmAgent:
         model=_model(),
         description="Valida reglas contra el schema y contrato ejecutable.",
         instruction=(
-            "Obtén el perfil con profile_selected_table cuando sea necesario. "
-            "Valida las reglas recibidas usando siempre validate_business_rules. "
-            "No declares una regla válida si la tool la rechaza. Explica errores "
-            "accionables y devuelve JSON válido."
+            "Perfil: {table_profile?}. Reglas: {business_rules_json}. "
+            "Si falta el perfil, obtenlo con profile_selected_table usando "
+            "{request_json}. Valida las reglas usando siempre "
+            "validate_business_rules. No declares válida una regla rechazada por "
+            "la tool. Devuelve exclusivamente JSON válido con valid, findings y "
+            "acciones de corrección."
         ),
         tools=[profile_selected_table, validate_business_rules],
         output_key="business_rule_validation",
@@ -71,11 +75,12 @@ def build_notebook_generator_agent() -> LlmAgent:
         model=_model(),
         description="Genera un blueprint de notebook gobernado y ejecutable.",
         instruction=(
-            "Genera el notebook solo si las reglas están aprobadas o validadas. Usa "
-            "build_notebook_blueprint con la especificación completa. Conserva "
+            "Especificación: {notebook_spec_json}. Validación de reglas: "
+            "{business_rule_validation?}. Propuestas de calidad: "
+            "{quality_rule_proposals?}. Usa build_notebook_blueprint. Si la "
+            "validación contiene errores o faltan datos, devuelve BLOCKED. Conserva "
             "business keys, watermark, estrategia de carga, quality gates y "
-            "validación post-ejecución. Devuelve JSON válido; si falta información, "
-            "devuelve BLOCKED con los campos faltantes."
+            "validación post-ejecución. Devuelve exclusivamente JSON válido."
         ),
         tools=[build_notebook_blueprint],
         output_key="notebook_blueprint",

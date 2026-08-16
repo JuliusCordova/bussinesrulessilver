@@ -1110,7 +1110,15 @@ function SchemaPreview({
   );
 }
 
-function IncrementalStep({ workflow, onNext }: { workflow: WorkflowState; onNext: () => void }) {
+function IncrementalStep({
+  workflow,
+  onProfile,
+  onNext,
+}: {
+  workflow: WorkflowState;
+  onProfile: () => void;
+  onNext: () => void;
+}) {
   const columns = workflow.sourceColumns ?? seedColumns;
   const businessKeyLabel = workflow.businessKeys?.join(', ') || 'No detectada';
   const watermarkLabel = workflow.watermarkColumn ?? 'No detectado';
@@ -1158,7 +1166,11 @@ function IncrementalStep({ workflow, onNext }: { workflow: WorkflowState; onNext
         <strong>Contrato detectado</strong>
         <p>Tabla: {workflow.projectId}.{workflow.sourceDataset}.{workflow.sourceTable}</p>
         <p>Columnas: {columns.length} · Estrategia propuesta: {strategy}</p>
+        <button onClick={onProfile}>Perfilar tabla con agente</button>
       </div>
+      {workflow.agentProfile && (
+        <AgentProfilePanel profile={workflow.agentProfile} sessionId={workflow.agentSessionId} />
+      )}
       <div className="validationBox">
         <strong>Validacion deterministica de columnas</strong>
         {validationChecks.map((check) => (
@@ -1168,6 +1180,40 @@ function IncrementalStep({ workflow, onNext }: { workflow: WorkflowState; onNext
         ))}
       </div>
       <button className="primary" onClick={onNext}>Confirmar estrategia</button>
+    </section>
+  );
+}
+
+function AgentProfilePanel({
+  profile,
+  sessionId,
+}: {
+  profile: Record<string, unknown>;
+  sessionId?: string;
+}) {
+  const columns = Array.isArray(profile.columns) ? profile.columns : [];
+  const criticalColumns = Array.isArray(profile.critical_columns) ? profile.critical_columns : [];
+  const keyCandidates = Array.isArray(profile.business_key_candidates)
+    ? profile.business_key_candidates
+    : [];
+
+  return (
+    <section className="agentPanel">
+      <div className="resultHeader">
+        <div>
+          <span className="resultEyebrow">Gemini ADK + evidencia BigQuery</span>
+          <h3>Perfilamiento completado</h3>
+        </div>
+        <span className="resultStatus">AGENT</span>
+      </div>
+      <div className="resultMetrics">
+        <article><span>Filas</span><strong>{String(profile.row_count ?? 'N/A')}</strong></article>
+        <article><span>Columnas perfiladas</span><strong>{columns.length}</strong></article>
+        <article><span>Campos críticos</span><strong>{criticalColumns.length}</strong></article>
+        <article><span>Claves candidatas</span><strong>{keyCandidates.length}</strong></article>
+      </div>
+      <p>Claves candidatas: {keyCandidates.map(String).join(', ') || 'Ninguna'}</p>
+      <small>Session: {sessionId ?? 'no informada'} · Toda métrica proviene de BigQuery.</small>
     </section>
   );
 }
@@ -1200,33 +1246,82 @@ function MappingStep({ workflow, onNext }: { workflow: WorkflowState; onNext: ()
   );
 }
 
-function RulesStep({ workflow, onNext }: { workflow: WorkflowState; onNext: () => void }) {
+function RulesStep({
+  workflow,
+  onRecommend,
+  onApproveProposal,
+  onNext,
+}: {
+  workflow: WorkflowState;
+  onRecommend: () => void;
+  onApproveProposal: (proposal: Record<string, unknown>, approved: boolean) => void;
+  onNext: () => void;
+}) {
+  const proposals = workflow.qualityRuleProposals ?? [];
+  const approvedNames = new Set(
+    (workflow.approvedQualityRules ?? []).map((rule) => String(rule.rule_name)),
+  );
+
   return (
     <section className="card">
       <div className="sectionHeader">
-        <h2>Reglas semilla generadas</h2>
-        <div className="actions"><button className="primary">Generar reglas</button><button>Guardar draft</button></div>
+        <div>
+          <h2>Reglas de calidad gobernadas</h2>
+          <p>Las propuestas del agente no se aplican hasta que las apruebes.</p>
+        </div>
+        <div className="actions">
+          <button className="primary" onClick={onRecommend}>Recomendar con Gemini ADK</button>
+        </div>
       </div>
-      <div className="ruleList">
-        {businessRules.map((rule) => (
-          <article key={rule.name}>
-            <div>
-              <strong>{rule.name}</strong>
-              <span>{rule.expression}</span>
-            </div>
-            <em className={rule.severity.toLowerCase()}>{rule.severity}</em>
-          </article>
-        ))}
-      </div>
+
       <div className="sprintNote">
-        <strong>Sprint final planificado</strong>
+        <strong>Fallback deterministico</strong>
         <span>
-          Esquema agentico para sugerir reglas de negocio y calidad a partir del schema,
-          perfil de datos y mapping aprobado. El MVP mantiene reglas deterministicas editables.
+          {toBackendQualityRules(workflow).length} reglas base disponibles si el agente no responde.
+          El sistema nunca aprueba automáticamente una recomendación.
         </span>
       </div>
-      <p className="catalogStatus">Workflow version backend: {currentVersion(workflow)}</p>
-      <button className="primary" onClick={onNext}>Confirmar reglas</button>
+
+      {proposals.length ? (
+        <div className="agentRuleList">
+          {proposals.map((proposal, index) => {
+            const backendRule = proposalToBackendRule(proposal);
+            const ruleName = String(backendRule.rule_name);
+            const approved = approvedNames.has(ruleName);
+            return (
+              <article key={`${ruleName}-${index}`} className={approved ? 'approved' : ''}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={approved}
+                    onChange={(event) => onApproveProposal(proposal, event.target.checked)}
+                  />
+                  <div>
+                    <strong>{String(proposal.rule_type ?? 'RULE')} · {String(proposal.column_name ?? '')}</strong>
+                    <span>{String(proposal.evidence ?? 'Sin evidencia textual.')}</span>
+                    <small>
+                      Estado actual: {String(proposal.current_status ?? 'UNKNOWN')} · Confianza:{' '}
+                      {proposal.confidence == null ? 'N/A' : String(proposal.confidence)}
+                    </small>
+                  </div>
+                </label>
+                <em>{approved ? 'APROBADA' : 'PENDIENTE'}</em>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="agentEmpty">
+          <strong>Sin propuestas agenticas</strong>
+          <span>Ejecuta el recomendador para analizar nulos, unicidad y cardinalidad.</span>
+        </div>
+      )}
+
+      <p className="catalogStatus">
+        Aprobadas: {workflow.approvedQualityRules?.length ?? 0} · Workflow version backend:{' '}
+        {currentVersion(workflow)}
+      </p>
+      <button className="primary" onClick={onNext}>Confirmar reglas aprobadas</button>
     </section>
   );
 }

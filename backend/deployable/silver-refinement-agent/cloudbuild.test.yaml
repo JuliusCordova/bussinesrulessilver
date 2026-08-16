@@ -1,0 +1,12 @@
+steps:
+  - name: python:3.11-slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        python -m pip install --no-cache-dir -r requirements-test.txt
+        python -m compileall -q modules tests
+        python -m pytest -q           tests/test_silver_agents.py           tests/test_result_validator.py
+options:
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1200s

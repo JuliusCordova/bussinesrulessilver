@@ -9,8 +9,12 @@ class AgentRunRequest(BaseModel):
     project_id: str = Field(min_length=1, max_length=128)
     source_dataset: str = Field(min_length=1, max_length=1024)
     source_table: str = Field(min_length=1, max_length=1024)
+    target_project_id: str | None = Field(default=None, max_length=128)
     target_dataset: str = Field(min_length=1, max_length=1024)
     target_table: str = Field(min_length=1, max_length=1024)
+    columns: list[dict[str, Any]] = Field(default_factory=list)
+    load_strategy: dict[str, Any] = Field(default_factory=dict)
+    physical_design: dict[str, Any] = Field(default_factory=dict)
     business_keys: list[str] = Field(default_factory=list)
     watermark_column: str | None = None
     business_rules: list[dict[str, Any]] = Field(default_factory=list)

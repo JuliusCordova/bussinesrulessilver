@@ -438,7 +438,7 @@ export function App() {
                   name: column.name,
                   data_type: column.type,
                   nullable:
-                    column.mode !== 'REQUIRED' &&
+                    !('mode' in column && column.mode === 'REQUIRED') &&
                     !(workflow.businessKeys ?? []).includes(column.name),
                   source_column: column.name,
                   transformation: toBackendTransformation('DIRECT_COPY'),

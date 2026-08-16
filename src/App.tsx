@@ -87,75 +87,103 @@ function normalizeError(error: unknown) {
   }
 }
 
-function toBackendQualityRules() {
-  return [
-    {
-      rule_name: 'producto_id_not_null',
-      rule_dimension: 'VALIDITY',
+function normalizedFieldType(field: CatalogField) {
+  return String(field.type || '').toUpperCase();
+}
+
+function inferTableContract(fields: CatalogField[]) {
+  const names = new Set(fields.map((field) => field.name));
+  const preferredKey = fields.find(
+    (field) => /_id$/i.test(field.name) && !field.name.startsWith('bronze_'),
+  );
+  const requiredKey = fields.find(
+    (field) => field.mode === 'REQUIRED' && /id|key|codigo/i.test(field.name),
+  );
+  const businessKey = preferredKey?.name ?? requiredKey?.name;
+
+  const watermark = fields.find(
+    (field) =>
+      ['TIMESTAMP', 'DATETIME', 'DATE'].includes(normalizedFieldType(field)) &&
+      /watermark|fecha_ingesta|updated|modified|timestamp|fecha/i.test(field.name),
+  )?.name;
+
+  const metric = fields.find(
+    (field) =>
+      ['INT64', 'INTEGER', 'FLOAT64', 'FLOAT', 'NUMERIC', 'BIGNUMERIC'].includes(normalizedFieldType(field)) &&
+      field.name !== businessKey &&
+      !field.name.startsWith('bronze_'),
+  )?.name;
+
+  return {
+    sourceColumns: fields,
+    businessKeys: businessKey && names.has(businessKey) ? [businessKey] : [],
+    watermarkColumn: watermark,
+    metricColumn: metric,
+  };
+}
+
+function toBackendQualityRules(workflow: WorkflowState) {
+  const rules: Array<Record<string, unknown>> = [];
+
+  for (const key of workflow.businessKeys ?? []) {
+    rules.push(
+      {
+        rule_name: `${key}_not_null`,
+        rule_dimension: 'VALIDITY',
+        rule_type: 'NOT_NULL',
+        column_name: key,
+        rule_parameters: {},
+        warning_threshold: 0,
+        critical_threshold: 1,
+        severity_level: 'CRITICAL',
+        active_flag: true,
+      },
+      {
+        rule_name: `${key}_unique`,
+        rule_dimension: 'UNIQUENESS',
+        rule_type: 'UNIQUE',
+        column_name: key,
+        rule_parameters: {},
+        warning_threshold: 0,
+        critical_threshold: 1,
+        severity_level: 'CRITICAL',
+        active_flag: true,
+      },
+    );
+  }
+
+  if (workflow.watermarkColumn) {
+    rules.push({
+      rule_name: `${workflow.watermarkColumn}_not_null`,
+      rule_dimension: 'COMPLETENESS',
       rule_type: 'NOT_NULL',
-      column_name: 'producto_id',
+      column_name: workflow.watermarkColumn,
       rule_parameters: {},
       warning_threshold: 0,
       critical_threshold: 1,
-      severity_level: 'CRITICAL',
-      active_flag: true,
-    },
-    {
-      rule_name: 'producto_id_unique',
-      rule_dimension: 'UNIQUENESS',
-      rule_type: 'UNIQUE',
-      column_name: 'producto_id',
-      rule_parameters: {},
-      warning_threshold: 0,
-      critical_threshold: 1,
-      severity_level: 'CRITICAL',
-      active_flag: true,
-    },
-    {
-      rule_name: 'moneda_allowed_values',
-      rule_dimension: 'VALIDITY',
-      rule_type: 'ALLOWED_VALUES',
-      column_name: 'moneda',
-      rule_parameters: { allowed_values: ['PEN', 'USD'] },
-      warning_threshold: 0,
-      critical_threshold: 1,
       severity_level: 'HIGH',
       active_flag: true,
-    },
-    {
-      rule_name: 'periodicidad_allowed_values',
-      rule_dimension: 'VALIDITY',
-      rule_type: 'ALLOWED_VALUES',
-      column_name: 'periodicidad',
-      rule_parameters: { allowed_values: ['MENSUAL', 'ANUAL'] },
-      warning_threshold: 0,
-      critical_threshold: 1,
-      severity_level: 'HIGH',
-      active_flag: true,
-    },
-    {
-      rule_name: 'prima_base_non_negative',
-      rule_dimension: 'ACCURACY',
-      rule_type: 'VALUE_RANGE',
-      column_name: 'prima_base',
-      rule_parameters: { min_value: 0, min_inclusive: true },
-      warning_threshold: 0,
-      critical_threshold: 1,
-      severity_level: 'HIGH',
-      active_flag: true,
-    },
-    {
-      rule_name: 'bronze_estado_registro_recibido',
-      rule_dimension: 'VALIDITY',
-      rule_type: 'ALLOWED_VALUES',
-      column_name: 'bronze_estado_registro',
-      rule_parameters: { allowed_values: ['RECIBIDO'] },
-      warning_threshold: 0,
-      critical_threshold: 1,
-      severity_level: 'MEDIUM',
-      active_flag: true,
-    },
-  ];
+    });
+  }
+
+  if (!rules.length) {
+    const requiredColumn = workflow.sourceColumns?.find((column) => column.mode === 'REQUIRED');
+    if (requiredColumn) {
+      rules.push({
+        rule_name: `${requiredColumn.name}_not_null`,
+        rule_dimension: 'COMPLETENESS',
+        rule_type: 'NOT_NULL',
+        column_name: requiredColumn.name,
+        rule_parameters: {},
+        warning_threshold: 0,
+        critical_threshold: 1,
+        severity_level: 'HIGH',
+        active_flag: true,
+      });
+    }
+  }
+
+  return rules;
 }
 
 export function App() {

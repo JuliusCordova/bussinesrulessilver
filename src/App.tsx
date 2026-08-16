@@ -431,6 +431,19 @@ export function App() {
         {workflow.activeStep === 'incremental' && (
           <IncrementalStep
             workflow={workflow}
+            onProfile={async () => {
+              await runAction('Perfilando tabla seleccionada con Gemini ADK y BigQuery...', async () => {
+                const response = await silverApi.runSilverAgent('table-profiler', buildAgentRequest(workflow));
+                const profile = parseAgentJson(response.output);
+                setWorkflow((current) => ({
+                  ...current,
+                  ...demoWorkflowPatch('Perfilamiento ADK completado'),
+                  agentProfile: profile,
+                  agentSessionId: response.session_id,
+                  backendMessage: JSON.stringify(response),
+                }));
+              });
+            }}
             onNext={async () => {
               await runAction('Confirmando origen y estrategia incremental...', async () => {
                 if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
@@ -483,6 +496,42 @@ export function App() {
         {workflow.activeStep === 'rules' && (
           <RulesStep
             workflow={workflow}
+            onRecommend={async () => {
+              await runAction('Generando recomendaciones de calidad con Gemini ADK...', async () => {
+                const response = await silverApi.runSilverAgent(
+                  'quality-rule-advisor',
+                  buildAgentRequest(workflow),
+                );
+                const output = parseAgentJson(response.output);
+                const proposals = Array.isArray(output.candidates)
+                  ? output.candidates.filter(
+                      (item): item is Record<string, unknown> =>
+                        Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+                    )
+                  : [];
+                setWorkflow((current) => ({
+                  ...current,
+                  ...demoWorkflowPatch('Recomendaciones ADK generadas'),
+                  qualityRuleProposals: proposals,
+                  approvedQualityRules: [],
+                  agentSessionId: response.session_id,
+                  backendMessage: JSON.stringify(response),
+                }));
+              });
+            }}
+            onApproveProposal={(proposal, approved) => {
+              const rule = proposalToBackendRule(proposal);
+              setWorkflow((current) => {
+                const existing = current.approvedQualityRules ?? [];
+                const ruleName = String(rule.rule_name);
+                return {
+                  ...current,
+                  approvedQualityRules: approved
+                    ? [...existing.filter((item) => item.rule_name !== ruleName), rule]
+                    : existing.filter((item) => item.rule_name !== ruleName),
+                };
+              });
+            }}
             onNext={async () => {
               await runAction('Generando y confirmando reglas de negocio...', async () => {
                 if (!workflow.workflowId) throw new Error('Primero crea el workflow.');

@@ -45,6 +45,10 @@ export interface WorkflowState {
   businessKeys?: string[];
   watermarkColumn?: string;
   metricColumn?: string;
+  loadStrategy?: 'FULL' | 'MERGE';
+  inferenceSource?: 'SCHEMA' | 'BIGQUERY_PROFILE' | 'USER';
+  inferenceReasons?: string[];
+  profileReportUrl?: string;
   agentProfile?: Record<string, unknown>;
   qualityRuleProposals?: Array<Record<string, unknown>>;
   approvedQualityRules?: Array<Record<string, unknown>>;

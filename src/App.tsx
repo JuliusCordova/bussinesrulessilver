@@ -434,7 +434,7 @@ export function App() {
             onProfile={async () => {
               await runAction('Perfilando tabla seleccionada con Gemini ADK y BigQuery...', async () => {
                 const response = await silverApi.runSilverAgent('table-profiler', buildAgentRequest(workflow));
-                const profile = parseAgentJson(response.output);
+                const profile = response.evidence ?? parseAgentJson(response.output);
                 setWorkflow((current) => ({
                   ...current,
                   ...demoWorkflowPatch('Perfilamiento ADK completado'),
@@ -502,7 +502,7 @@ export function App() {
                   'quality-rule-advisor',
                   buildAgentRequest(workflow),
                 );
-                const output = parseAgentJson(response.output);
+                const output = response.evidence ?? parseAgentJson(response.output);
                 const proposals = Array.isArray(output.candidates)
                   ? output.candidates.filter(
                       (item): item is Record<string, unknown> =>

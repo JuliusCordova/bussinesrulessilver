@@ -74,7 +74,12 @@ while i < len(lines):
     i += 1
 
 if not revision_replaced:
-    raise SystemExit("No se encontró spec.template.metadata.name")
+    try:
+        metadata_index = out.index("    metadata:")
+    except ValueError as exc:
+        raise SystemExit("No se encontró spec.template.metadata") from exc
+    out.insert(metadata_index + 1, f"      name: {revision}")
+    revision_replaced = True
 if not image_replaced:
     raise SystemExit("No se encontró la imagen del contenedor")
 

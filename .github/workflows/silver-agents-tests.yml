@@ -1,0 +1,44 @@
+name: Silver Agents Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/deployable/silver-refinement-agent/modules/silver_agents/**"
+      - "backend/deployable/silver-refinement-agent/modules/silver_execution/**"
+      - "backend/deployable/silver-refinement-agent/tests/test_silver_agents.py"
+      - "backend/deployable/silver-refinement-agent/tests/test_result_validator.py"
+      - "backend/deployable/silver-refinement-agent/requirements*.txt"
+      - ".github/workflows/silver-agents-tests.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/deployable/silver-refinement-agent
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/deployable/silver-refinement-agent/requirements.txt
+            backend/deployable/silver-refinement-agent/requirements-test.txt
+
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-test.txt
+
+      - name: Compile Python
+        run: python -m compileall -q modules tests
+
+      - name: Run focused tests
+        run: |
+          python -m pytest -q             tests/test_silver_agents.py             tests/test_result_validator.py

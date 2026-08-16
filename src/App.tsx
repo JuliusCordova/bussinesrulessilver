@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { demoWorkflowPatch, silverApi, type CatalogTableDetail, type SilverWorkflowRecord } from './api';
+import {
+  demoWorkflowPatch,
+  silverApi,
+  type CatalogTableDetail,
+  type SilverAgentRunRequest,
+  type SilverWorkflowRecord,
+} from './api';
 import { businessRules, mappingRules, seedColumns, seedSource } from './seed';
 import { toBackendTransformation } from './transformations';
 import type { CatalogField, StepId, WorkflowState } from './types';
@@ -184,6 +190,75 @@ function toBackendQualityRules(workflow: WorkflowState) {
   }
 
   return rules;
+}
+
+
+function parseAgentJson(output: string): Record<string, unknown> {
+  const cleaned = output.trim().replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/, '');
+  const parsed = JSON.parse(cleaned);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('El agente no devolvio un objeto JSON valido.');
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function buildAgentRequest(workflow: WorkflowState): SilverAgentRunRequest {
+  if (!workflow.projectId || !workflow.sourceDataset || !workflow.sourceTable) {
+    throw new Error('Selecciona una tabla origen antes de ejecutar agentes.');
+  }
+  if (!workflow.targetDataset || !workflow.targetTable) {
+    throw new Error('Define la tabla destino antes de ejecutar agentes.');
+  }
+
+  return {
+    project_id: workflow.projectId,
+    source_dataset: workflow.sourceDataset,
+    source_table: workflow.sourceTable,
+    target_project_id: workflow.projectId,
+    target_dataset: workflow.targetDataset,
+    target_table: workflow.targetTable,
+    columns: (workflow.sourceColumns ?? []).map((column) => ({
+      name: column.name,
+      type: column.type,
+      mode: column.mode ?? 'NULLABLE',
+    })),
+    load_strategy: (workflow.businessKeys ?? []).length
+      ? {
+          type: 'MERGE',
+          business_keys: workflow.businessKeys,
+          watermark_column: workflow.watermarkColumn ?? null,
+        }
+      : { type: 'FULL', business_keys: [] },
+    physical_design: {
+      partitioning: workflow.watermarkColumn
+        ? { enabled: true, column: workflow.watermarkColumn, granularity: 'DAY' }
+        : { enabled: false },
+      clustering_columns: (workflow.businessKeys ?? []).slice(0, 4),
+    },
+    business_keys: workflow.businessKeys ?? [],
+    watermark_column: workflow.watermarkColumn ?? null,
+    business_rules: toBackendQualityRules(workflow),
+    approved_quality_rules: workflow.approvedQualityRules ?? [],
+    context: 'MVP gobernado: toda recomendacion requiere aprobacion humana.',
+  };
+}
+
+function proposalToBackendRule(proposal: Record<string, unknown>) {
+  const columnName = String(proposal.column_name ?? '');
+  const ruleType = String(proposal.rule_type ?? '');
+  return {
+    rule_name: `${columnName}_${ruleType.toLowerCase()}`,
+    rule_dimension: ruleType === 'UNIQUE' ? 'UNIQUENESS' : 'VALIDITY',
+    rule_type: ruleType,
+    column_name: columnName,
+    rule_parameters: (proposal.rule_parameters as Record<string, unknown> | undefined) ?? {},
+    warning_threshold: 0,
+    critical_threshold: 1,
+    severity_level: String(proposal.severity_level ?? 'MEDIUM'),
+    active_flag: true,
+    agent_evidence: proposal.evidence ?? null,
+    agent_confidence: proposal.confidence ?? null,
+  };
 }
 
 export function App() {

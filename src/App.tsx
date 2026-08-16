@@ -898,6 +898,9 @@ function SourceStep({
       | 'businessKeys'
       | 'watermarkColumn'
       | 'metricColumn'
+      | 'loadStrategy'
+      | 'inferenceSource'
+      | 'inferenceReasons'
     >,
   ) => void;
   onError: (error: unknown) => void;
@@ -963,8 +966,16 @@ function SourceStep({
     try {
       const response = await silverApi.listTables(projectId, datasetId);
       const names = normalizeList(response, ['table_id', 'tableId', 'id', 'name']);
-      if (target) setTargetTables(names);
-      else setSourceTables(names);
+      if (target) {
+        setTargetTables(names);
+      } else {
+        setSourceTables(names);
+        const selected = names.includes(sourceTable) ? sourceTable : (names[0] ?? '');
+        if (selected) {
+          setSourceTable(selected);
+          void inspectTable(selected, datasetId);
+        }
+      }
       setCatalogStatus(`Tablas cargadas para ${datasetId}: ${names.length}`);
     } catch (error) {
       setCatalogStatus(`No se pudo consultar tablas: ${(error as Error).message}`);

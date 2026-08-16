@@ -169,6 +169,7 @@ export interface SilverAgentRunResponse {
   status: string;
   output: string;
   events: number;
+  evidence?: Record<string, unknown> | null;
 }
 
 export interface SilverWorkflowRecord {

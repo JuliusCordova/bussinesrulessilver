@@ -28,6 +28,7 @@ class AgentRunResponse(BaseModel):
     status: str
     output: str
     events: int
+    evidence: dict[str, Any] | None = None
 
 
 class AgentDescriptor(BaseModel):

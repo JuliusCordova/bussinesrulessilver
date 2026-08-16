@@ -4,6 +4,7 @@ import json
 
 from modules.silver_agents.agents import (
     build_business_rule_validator_agent,
+    build_mapping_advisor_agent,
     build_notebook_generator_agent,
     build_quality_rule_advisor_agent,
     build_silver_orchestrator,
@@ -15,6 +16,7 @@ from modules.silver_agents.service import SilverAgentRunner
 from modules.silver_agents.tools import (
     build_notebook_blueprint,
     quality_rule_evidence,
+    recommend_column_mappings,
     validate_business_rules,
 )
 
@@ -22,19 +24,21 @@ from modules.silver_agents.tools import (
 def test_builds_all_adk_agents() -> None:
     agents = [
         build_table_profiler_agent(),
+        build_mapping_advisor_agent(),
         build_quality_rule_advisor_agent(),
         build_business_rule_validator_agent(),
         build_notebook_generator_agent(),
     ]
     assert [agent.name for agent in agents] == [
         "silver_table_profiler",
+        "silver_mapping_advisor",
         "silver_quality_rule_advisor",
         "silver_business_rule_validator",
         "silver_notebook_generator",
     ]
     orchestrator = build_silver_orchestrator()
     assert orchestrator.name == "silver_design_orchestrator"
-    assert len(orchestrator.sub_agents) == 4
+    assert len(orchestrator.sub_agents) == 5
 
 
 def test_quality_advisor_flags_nulls_and_duplicates_on_business_key() -> None:
@@ -139,3 +143,28 @@ def test_profile_report_is_a_valid_pdf() -> None:
     content = ProfileReportService().build(profile)
     assert content.startswith(b"%PDF-")
     assert len(content) > 1500
+
+
+def test_mapping_advisor_uses_only_selected_schema_columns() -> None:
+    columns = [
+        {"name": "pago_id", "type": "STRING", "mode": "NULLABLE"},
+        {"name": "monto_pago", "type": "NUMERIC", "mode": "NULLABLE"},
+    ]
+    profile = {
+        "table": "project.bronze.pagos_primas",
+        "columns": [
+            {"name": "pago_id", "null_count": 2, "distinct_count": 98},
+            {"name": "monto_pago", "null_count": 0, "distinct_count": 40},
+        ],
+    }
+    result = recommend_column_mappings(
+        json.dumps(columns),
+        json.dumps(profile),
+    )
+    assert [item["source_column"] for item in result["columns"]] == [
+        "pago_id",
+        "monto_pago",
+    ]
+    assert result["columns"][0]["transformation"]["type"] == "TRIM"
+    assert "producto_id" not in json.dumps(result)
+    assert result["requires_human_approval"] is True

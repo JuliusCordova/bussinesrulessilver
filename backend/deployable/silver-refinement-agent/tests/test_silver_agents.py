@@ -9,6 +9,8 @@ from modules.silver_agents.agents import (
     build_silver_orchestrator,
     build_table_profiler_agent,
 )
+from modules.silver_agents.models import AgentRunRequest
+from modules.silver_agents.service import SilverAgentRunner
 from modules.silver_agents.tools import (
     build_notebook_blueprint,
     quality_rule_evidence,
@@ -86,3 +88,29 @@ def test_notebook_blueprint_requires_business_key_for_merge() -> None:
     result = build_notebook_blueprint(json.dumps(spec))
     assert result["valid"] is False
     assert "load_strategy.business_keys" in result["missing_fields"]
+
+
+def test_runner_builds_complete_shared_state() -> None:
+    request = AgentRunRequest(
+        project_id="project",
+        source_dataset="bronze",
+        source_table="customer",
+        target_dataset="silver",
+        target_table="customer",
+        columns=[{"name": "customer_id", "data_type": "STRING"}],
+        business_keys=["customer_id"],
+        watermark_column="ingestion_timestamp",
+        business_rules=[{
+            "rule_type": "NOT_NULL",
+            "column_name": "customer_id",
+            "rule_parameters": {},
+        }],
+    )
+    payload = SilverAgentRunner._payload(request)
+    state = SilverAgentRunner._initial_state(payload)
+    notebook_spec = json.loads(state["notebook_spec_json"])
+
+    assert payload["load_strategy"]["type"] == "MERGE"
+    assert notebook_spec["columns"][0]["name"] == "customer_id"
+    assert notebook_spec["load_strategy"]["business_keys"] == ["customer_id"]
+    assert json.loads(state["business_rules_json"])[0]["rule_type"] == "NOT_NULL"

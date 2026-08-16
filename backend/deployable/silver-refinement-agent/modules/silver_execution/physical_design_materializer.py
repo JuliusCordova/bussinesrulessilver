@@ -101,7 +101,17 @@ class PhysicalDesignMaterializer:
             design.clustering_columns
         )
 
-        if actual_clusters != expected_clusters:
+        # BigQuery allows up to four clustering columns. An existing target
+        # with the governed columns as an ordered prefix is compatible: the
+        # additional columns refine clustering without changing the requested
+        # leading clustering semantics. Reordering or missing expected columns
+        # remains physical drift.
+        compatible_clusters = (
+            actual_clusters[: len(expected_clusters)]
+            == expected_clusters
+        )
+
+        if not compatible_clusters:
             raise ValueError(
                 f"Physical design mismatch para {target_table}: "
                 f"clustering actual={actual_clusters}, "

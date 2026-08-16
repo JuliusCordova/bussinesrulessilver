@@ -45,6 +45,10 @@ export interface WorkflowState {
   businessKeys?: string[];
   watermarkColumn?: string;
   metricColumn?: string;
+  agentProfile?: Record<string, unknown>;
+  qualityRuleProposals?: Array<Record<string, unknown>>;
+  approvedQualityRules?: Array<Record<string, unknown>>;
+  agentSessionId?: string;
   lastAction?: string;
   error?: string;
   errorDetail?: string;

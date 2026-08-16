@@ -53,6 +53,7 @@ steps:
       - -c
       - |
         import json
+        import re
         import urllib.request
 
         base = "https://silver-refinement-agent-merge-test-mkqutd4koq-uc.a.run.app"
@@ -125,13 +126,10 @@ steps:
         result = json.loads(body)
         assert status == 200, body
         assert result["status"] == "COMPLETED", result
-        profile = json.loads(
-            result["output"].strip().removeprefix(">>>json").removesuffix(">>>").strip()
-        ) if result["output"].strip().startswith(">>>") else json.loads(
-            result["output"].strip().removeprefix("~~~json").removesuffix("~~~").strip()
-        ) if result["output"].strip().startswith("~~~") else json.loads(
-            result["output"].strip().removeprefix("```json").removesuffix("```").strip()
-        )
+        raw_output = result["output"].strip()
+        raw_output = re.sub(r"^```(?:json)?\\s*", "", raw_output, flags=re.I)
+        raw_output = re.sub(r"\\s*```$", "", raw_output)
+        profile = json.loads(raw_output)
         assert int(profile["row_count"]) > 0, profile
         assert profile.get("columns"), profile
 

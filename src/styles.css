@@ -770,3 +770,69 @@ pre {
 .agentEmpty span {
   color: #65605c;
 }
+
+.hybridField {
+  border: 0;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.hybridField legend {
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.hybridField select,
+.hybridField input {
+  width: 100%;
+}
+
+.profileBox small {
+  color: #65605c;
+  display: block;
+  margin: 5px 0;
+}
+
+.validationBox article {
+  display: grid;
+  gap: 3px;
+}
+
+.validationBox article span {
+  font-weight: 500;
+}
+
+.pdfReportPanel {
+  background: #f7f6f4;
+  border: 1px solid #d8d2c9;
+  border-radius: 10px;
+  margin: 18px 0;
+  padding: 16px;
+}
+
+.pdfReportPanel a {
+  background: #202020;
+  border-radius: 7px;
+  color: white;
+  font-weight: 800;
+  padding: 10px 14px;
+  text-decoration: none;
+}
+
+.pdfReportPanel iframe {
+  background: white;
+  border: 1px solid #b9b1a7;
+  border-radius: 7px;
+  height: 620px;
+  margin-top: 12px;
+  width: 100%;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

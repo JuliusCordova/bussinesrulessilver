@@ -15,6 +15,7 @@ from modules.multi_agent.memory_router import router as memory_router
 from modules.multi_agent.planning_router import router as planning_router
 from modules.multi_agent.router import router as multi_agent_router
 from modules.platform_availability.router import router as platform_availability_router
+from modules.silver_agents.router import router as silver_agents_router
 from modules.silver_execution.execution_router import router as execution_router
 from modules.silver_workflow.router import router as silver_workflow_router
 
@@ -23,7 +24,7 @@ from .artifact_router import router as artifact_router
 
 app = FastAPI(
     title="Silver Refinement Agent API",
-    version="8.1.3",
+    version="8.2.0",
 )
 app.add_middleware(
     CORSMiddleware,
@@ -35,6 +36,7 @@ app.add_middleware(
 app.include_router(artifact_router)
 app.include_router(silver_workflow_router)
 app.include_router(execution_router)
+app.include_router(silver_agents_router)
 app.include_router(agentops_router)
 app.include_router(governance_router)
 app.include_router(promotion_router)
@@ -53,4 +55,4 @@ app.include_router(platform_availability_router)
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "module": "silver-refinement", "version": "8.1.3"}
+    return {"status": "ok", "module": "silver-refinement", "version": "8.2.0"}

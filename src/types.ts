@@ -41,6 +41,10 @@ export interface WorkflowState {
   sourceTable?: string;
   targetDataset?: string;
   targetTable?: string;
+  sourceColumns?: CatalogField[];
+  businessKeys?: string[];
+  watermarkColumn?: string;
+  metricColumn?: string;
   lastAction?: string;
   error?: string;
   errorDetail?: string;

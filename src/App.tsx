@@ -230,8 +230,9 @@ export function App() {
         executionStatus,
         status: executionStatus === 'SUCCEEDED' ? 'SUCCEEDED' : executionStatus === 'FAILED' ? 'FAILED' : current.status,
         stateMessage: result.state_message ?? undefined,
+        validationResult: result.validation_result ?? current.validationResult,
         backendMessage: JSON.stringify(result),
-        error: executionStatus === 'FAILED' ? (result.state_message ?? 'La ejecucion Dataproc fallo.') : undefined,
+        error: executionStatus === 'FAILED' ? (result.state_message ?? 'La ejecucion o la validacion BigQuery fallo.') : undefined,
         errorDetail: executionStatus === 'FAILED' ? JSON.stringify(result, null, 2) : undefined,
       }));
     };
@@ -518,6 +519,26 @@ export function App() {
             onSync={async () => {
               await syncExecutionStatus();
             }}
+            onResult={async () => {
+              await runAction('Consultando validacion BigQuery post-ejecucion...', async () => {
+                if (!workflow.executionId) throw new Error('Primero crea execution.');
+                const result = await silverApi.getExecutionResult(workflow.executionId);
+                setWorkflow((current) => ({
+                  ...current,
+                  ...demoWorkflowPatch('Resultado BigQuery validado'),
+                  validationResult: result,
+                  executionStatus: result.conformant ? 'SUCCEEDED' : 'FAILED',
+                  status: result.conformant ? 'SUCCEEDED' : 'FAILED',
+                  stateMessage: result.conformant
+                    ? 'Dataproc y validacion BigQuery conformes.'
+                    : 'Validacion BigQuery no conforme.',
+                  backendMessage: JSON.stringify(result),
+                  error: result.conformant ? undefined : 'La validacion BigQuery post-ejecucion no es conforme.',
+                  errorDetail: result.conformant ? undefined : JSON.stringify(result, null, 2),
+                }));
+              });
+            }}
+            validationResult={workflow.validationResult}
           />
         )}
       </main>
@@ -1062,6 +1083,8 @@ function ExecutionStep({
   onValidate,
   onSubmit,
   onSync,
+  onResult,
+  validationResult,
 }: {
   batchId?: string;
   executionStatus?: WorkflowState['executionStatus'];
@@ -1069,11 +1092,14 @@ function ExecutionStep({
   onValidate: () => void;
   onSubmit: () => void;
   onSync: () => void;
+  onResult: () => void;
+  validationResult?: WorkflowState['validationResult'];
 }) {
   const flow = ['Crear execution', 'Validar package', 'Confirmar ejecucion', 'Submit Dataproc', 'Sync status', 'Ver resultado'];
   const canSubmit = executionStatus === 'VALIDATED';
   const canSync = executionStatus === 'QUEUED' || executionStatus === 'RUNNING' || executionStatus === 'FAILED';
   const canValidate = executionStatus === 'PENDING' || executionStatus === undefined;
+  const canViewResult = executionStatus === 'SUCCEEDED' || executionStatus === 'FAILED';
   const statusText =
     executionStatus === 'QUEUED'
       ? 'Ejecucion enviada. Dataproc esta en cola.'
@@ -1105,6 +1131,57 @@ function ExecutionStep({
         <button disabled={!canValidate} onClick={onValidate}>Validar package</button>
         <button className="primary" disabled={!canSubmit} onClick={onSubmit}>Ejecutar Dataproc</button>
         <button disabled={!canSync} onClick={onSync}>Sincronizar estado</button>
+        <button disabled={!canViewResult} onClick={onResult}>Ver resultado</button>
+      </div>
+      {validationResult && <BigQueryResultPanel result={validationResult} />}
+    </section>
+  );
+}
+
+
+function BigQueryResultPanel({ result }: { result: NonNullable<WorkflowState['validationResult']> }) {
+  const metricSum = result.metric_sum == null
+    ? 'No aplica'
+    : new Intl.NumberFormat('es-PE', { maximumFractionDigits: 6 }).format(result.metric_sum);
+
+  return (
+    <section className={`resultPanel ${result.conformant ? 'conformant' : 'nonConformant'}`}>
+      <div className="resultHeader">
+        <div>
+          <span className="resultEyebrow">Validacion BigQuery post-ejecucion</span>
+          <h3>{result.conformant ? 'CONFORME' : 'NO CONFORME'}</h3>
+        </div>
+        <span className="resultStatus">{result.status}</span>
+      </div>
+
+      <div className="resultMetrics">
+        <article><span>Filas Silver</span><strong>{result.row_count}</strong></article>
+        <article><span>Claves distintas</span><strong>{result.distinct_business_key_count ?? 'N/A'}</strong></article>
+        <article><span>Duplicados</span><strong>{result.duplicate_count}</strong></article>
+        <article><span>Diferencias Bronze/Silver</span><strong>{result.diff_count ?? 'N/A'}</strong></article>
+        <article><span>Suma {result.metric_column ?? 'metrica'}</span><strong>{metricSum}</strong></article>
+      </div>
+
+      <dl className="resultTables">
+        <div><dt>Origen</dt><dd>{result.source_table ?? 'No informado'}</dd></div>
+        <div><dt>Destino</dt><dd>{result.target_table}</dd></div>
+        <div><dt>Business key</dt><dd>{result.business_keys.join(', ') || 'No definida'}</dd></div>
+        <div><dt>Validado</dt><dd>{new Date(result.validated_at).toLocaleString('es-PE')}</dd></div>
+      </dl>
+
+      <div className="resultChecks">
+        {result.checks.map((check) => (
+          <article key={check.name} className={check.status.toLowerCase()}>
+            <span className="checkBadge">{check.status}</span>
+            <div>
+              <strong>{check.name.replaceAll('_', ' ')}</strong>
+              {(check.expected != null || check.actual != null) && (
+                <small>Esperado: {check.expected ?? 'N/A'} · Actual: {check.actual ?? 'N/A'}</small>
+              )}
+              {check.details && <small>{check.details}</small>}
+            </div>
+          </article>
+        ))}
       </div>
     </section>
   );

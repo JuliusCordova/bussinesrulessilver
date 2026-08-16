@@ -53,7 +53,6 @@ steps:
       - -c
       - |
         import json
-        import re
         import urllib.request
 
         base = "https://silver-refinement-agent-merge-test-mkqutd4koq-uc.a.run.app"
@@ -126,26 +125,10 @@ steps:
         result = json.loads(body)
         assert status == 200, body
         assert result["status"] == "COMPLETED", result
-        raw_output = result["output"].strip()
-        raw_output = re.sub(r"^```(?:json)?\\s*", "", raw_output, flags=re.I)
-        raw_output = re.sub(r"\\s*```$", "", raw_output)
-
-        profile = None
-        decoder = json.JSONDecoder()
-        for position, character in enumerate(raw_output):
-            if character != "{":
-                continue
-            try:
-                candidate, _ = decoder.raw_decode(raw_output[position:])
-            except json.JSONDecodeError:
-                continue
-            if isinstance(candidate, dict):
-                profile = candidate
-                break
-
-        assert profile is not None, {
-            "message": "ADK output does not contain a valid JSON object",
-            "output": raw_output[:2000],
+        profile = result.get("evidence")
+        assert isinstance(profile, dict), {
+            "message": "Agent response does not include canonical tool evidence",
+            "response": result,
         }
         assert int(profile["row_count"]) > 0, profile
         assert profile.get("columns"), profile

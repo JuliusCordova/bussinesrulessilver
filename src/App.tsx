@@ -97,6 +97,31 @@ function normalizedFieldType(field: CatalogField) {
   return String(field.type || '').toUpperCase();
 }
 
+function normalizeCatalogFields(detail: CatalogTableDetail | null): CatalogField[] {
+  if (!detail) return [];
+  const rawSchema = Array.isArray(detail.schema)
+    ? detail.schema
+    : detail.schema?.fields ??
+      detail.fields ??
+      detail.columns ??
+      (Array.isArray(detail.table?.schema) ? detail.table.schema : detail.table?.schema?.fields) ??
+      detail.table?.fields ??
+      detail.table?.columns ??
+      [];
+
+  return rawSchema
+    .map((field) => {
+      const candidate = field as CatalogField & { data_type?: string };
+      return {
+        name: String(candidate.name ?? ''),
+        type: String(candidate.type ?? candidate.data_type ?? ''),
+        mode: candidate.mode ?? 'NULLABLE',
+        description: candidate.description,
+      };
+    })
+    .filter((field) => Boolean(field.name && field.type));
+}
+
 function inferTableContract(fields: CatalogField[]) {
   const names = new Set(fields.map((field) => field.name));
   const preferredKey = fields.find(
@@ -125,6 +150,52 @@ function inferTableContract(fields: CatalogField[]) {
     businessKeys: businessKey && names.has(businessKey) ? [businessKey] : [],
     watermarkColumn: watermark,
     metricColumn: metric,
+  };
+}
+
+function inferProfileContract(profile: Record<string, unknown>, fallback: CatalogField[]) {
+  const rawColumns = Array.isArray(profile.columns) ? profile.columns : [];
+  const profileColumns = rawColumns
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    .map((item) => ({
+      name: String(item.name ?? ''),
+      type: String(item.type ?? item.data_type ?? ''),
+      mode: String(item.mode ?? 'NULLABLE'),
+      description: typeof item.description === 'string' ? item.description : undefined,
+    }))
+    .filter((field) => Boolean(field.name && field.type));
+  const columns = profileColumns.length ? profileColumns : fallback;
+  const names = new Set(columns.map((column) => column.name));
+  const candidates = Array.isArray(profile.business_key_candidates)
+    ? profile.business_key_candidates.map(String).filter((name) => names.has(name))
+    : [];
+  const partitioning = typeof profile.partitioning === 'string' && names.has(profile.partitioning)
+    ? profile.partitioning
+    : undefined;
+  const schemaContract = inferTableContract(columns);
+  const businessKeys = candidates.slice(0, 1);
+  const watermarkColumn = partitioning ?? schemaContract.watermarkColumn;
+  const metricColumn = schemaContract.metricColumn;
+  const loadStrategy: 'FULL' | 'MERGE' = businessKeys.length ? 'MERGE' : 'FULL';
+  const inferenceReasons = businessKeys.length
+    ? [
+        `MERGE propuesto: ${businessKeys[0]} tiene cero nulos y cardinalidad compatible con el total de filas.`,
+        watermarkColumn
+          ? `Watermark propuesto por tipo temporal/nombre o particion: ${watermarkColumn}.`
+          : 'No se detecto watermark seguro; MERGE opera por clave.',
+      ]
+    : [
+        'FULL propuesto: el perfil no encontro una clave candidata simultaneamente no nula y unica.',
+        'Puedes seleccionar manualmente una clave y cambiar a MERGE bajo tu aprobacion.',
+      ];
+  return {
+    sourceColumns: columns,
+    businessKeys,
+    watermarkColumn,
+    metricColumn,
+    loadStrategy,
+    inferenceSource: 'BIGQUERY_PROFILE' as const,
+    inferenceReasons,
   };
 }
 
@@ -222,10 +293,10 @@ function buildAgentRequest(workflow: WorkflowState): SilverAgentRunRequest {
       type: column.type,
       mode: column.mode ?? 'NULLABLE',
     })),
-    load_strategy: (workflow.businessKeys ?? []).length
+    load_strategy: workflow.loadStrategy === 'MERGE'
       ? {
           type: 'MERGE',
-          business_keys: workflow.businessKeys,
+          business_keys: workflow.businessKeys ?? [],
           watermark_column: workflow.watermarkColumn ?? null,
         }
       : { type: 'FULL', business_keys: [] },
@@ -435,13 +506,38 @@ export function App() {
               await runAction('Perfilando tabla seleccionada con Gemini ADK y BigQuery...', async () => {
                 const response = await silverApi.runSilverAgent('table-profiler', buildAgentRequest(workflow));
                 const profile = response.evidence ?? parseAgentJson(response.output);
+                const inferred = inferProfileContract(profile, workflow.sourceColumns ?? []);
                 setWorkflow((current) => ({
                   ...current,
-                  ...demoWorkflowPatch('Perfilamiento ADK completado'),
+                  ...inferred,
+                  ...demoWorkflowPatch('Perfilamiento ADK e inferencia completados'),
                   agentProfile: profile,
                   agentSessionId: response.session_id,
                   backendMessage: JSON.stringify(response),
                 }));
+              });
+            }}
+            onContractChange={(patch) => {
+              setWorkflow((current) => ({
+                ...current,
+                ...patch,
+                inferenceSource: 'USER',
+                inferenceReasons: ['Estrategia ajustada manualmente y pendiente de confirmacion.'],
+              }));
+            }}
+            onReport={async () => {
+              await runAction('Generando informe PDF de perfilamiento...', async () => {
+                if (!workflow.agentProfile) throw new Error('Primero perfila la tabla seleccionada.');
+                const blob = await silverApi.generateTableProfileReport(buildAgentRequest(workflow));
+                const url = URL.createObjectURL(blob);
+                setWorkflow((current) => {
+                  if (current.profileReportUrl) URL.revokeObjectURL(current.profileReportUrl);
+                  return {
+                    ...current,
+                    profileReportUrl: url,
+                    ...demoWorkflowPatch('Informe PDF de perfilamiento generado'),
+                  };
+                });
               });
             }}
             onNext={async () => {
@@ -567,7 +663,7 @@ export function App() {
                   source_column: column.name,
                   transformation: toBackendTransformation('DIRECT_COPY'),
                 }));
-                const loadStrategy = (workflow.businessKeys ?? []).length
+                const loadStrategy = workflow.loadStrategy === 'MERGE'
                   ? {
                       type: 'MERGE',
                       watermark_column: workflow.watermarkColumn ?? null,
@@ -818,15 +914,7 @@ function SourceStep({
   const [catalogStatus, setCatalogStatus] = useState<string>('Catalogo real pendiente de carga.');
   const [loading, setLoading] = useState(false);
 
-  const schemaFields =
-    tableDetail?.schema?.fields ??
-    tableDetail?.fields ??
-    tableDetail?.columns ??
-    tableDetail?.table?.schema?.fields ??
-    tableDetail?.table?.fields ??
-    tableDetail?.table?.columns;
-
-  const sourceColumns = schemaFields?.length ? schemaFields : seedColumns;
+  const sourceColumns = normalizeCatalogFields(tableDetail);
 
   function normalizeList(value: unknown, preferredKeys: string[]) {
     const list = Array.isArray(value)
@@ -885,13 +973,16 @@ function SourceStep({
     }
   }
 
-  async function inspectTable() {
+  async function inspectTable(tableId = sourceTable, datasetId = sourceDataset) {
+    if (!tableId || !datasetId) return;
     setLoading(true);
-    setCatalogStatus(`Leyendo schema real de ${sourceDataset}.${sourceTable}...`);
+    setTableDetail(null);
+    setCatalogStatus(`Leyendo schema real de ${datasetId}.${tableId}...`);
     try {
-      const response = await silverApi.getTable(projectId, sourceDataset, sourceTable);
+      const response = await silverApi.getTable(projectId, datasetId, tableId);
       setTableDetail(response);
-      setCatalogStatus('Schema real cargado desde backend.');
+      const fields = normalizeCatalogFields(response);
+      setCatalogStatus(`Schema real cargado: ${fields.length} columnas de ${datasetId}.${tableId}.`);
     } catch (error) {
       setCatalogStatus(`No se pudo leer schema real: ${(error as Error).message}`);
     } finally {
@@ -909,8 +1000,8 @@ function SourceStep({
     setSourceTable(seedSource.sourceTable);
     setTargetDataset(seedSource.targetDataset);
     setTargetTable(seedSource.targetTable);
-    setTableDetail(null);
-    setCatalogStatus('Caso semilla cargado. Puedes consultar catalogo real si el backend/CORS lo permite.');
+    setTableDetail({ schema: seedColumns });
+    setCatalogStatus('Caso semilla cargado explicitamente.');
   }
 
   const targetAlreadyExists = targetTables.includes(targetTable);
@@ -936,7 +1027,16 @@ function SourceStep({
           create_target_if_missing: !targetAlreadyExists,
         },
       });
-      const contract = inferTableContract(sourceColumns);
+      let effectiveColumns = sourceColumns;
+      if (!effectiveColumns.length) {
+        const detail = await silverApi.getTable(projectId, sourceDataset, sourceTable);
+        effectiveColumns = normalizeCatalogFields(detail);
+        setTableDetail(detail);
+      }
+      if (!effectiveColumns.length) {
+        throw new Error('La tabla origen no devolvio un schema utilizable.');
+      }
+      const contract = inferTableContract(effectiveColumns);
       onWorkflowCreated(record, {
         projectId,
         sourceDataset,
@@ -944,6 +1044,9 @@ function SourceStep({
         targetDataset,
         targetTable,
         ...contract,
+        loadStrategy: contract.businessKeys.length ? 'MERGE' : 'FULL',
+        inferenceSource: 'SCHEMA',
+        inferenceReasons: ['Inferencia inicial basada en nombres y tipos del schema; el perfil BigQuery la confirmara o reemplazara.'],
       });
     } catch (error) {
       setCatalogStatus('El backend rechazo la creacion del workflow.');
@@ -969,7 +1072,16 @@ function SourceStep({
               void loadTables(value);
             }}
           />
-          <SelectField label="Tabla origen Bronze" value={sourceTable} options={sourceTables} onChange={setSourceTable} />
+          <SelectField
+            label="Tabla origen Bronze"
+            value={sourceTable}
+            options={sourceTables}
+            onChange={(value) => {
+              setSourceTable(value);
+              setTableDetail(null);
+              void inspectTable(value, sourceDataset);
+            }}
+          />
           <SelectField
             label="Dataset destino Silver"
             value={targetDataset}
@@ -1059,21 +1171,29 @@ function EditableSelectField({
   onChange: (value: string) => void;
   placeholder?: string;
 }) {
+  const existing = options.includes(value);
   return (
-    <label className="field">
-      <span>{label}</span>
-      <input
-        list={`${label.replace(/\W+/g, '-')}-options`}
-        placeholder={placeholder}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-      <datalist id={`${label.replace(/\W+/g, '-')}-options`}>
+    <fieldset className="field hybridField">
+      <legend>{label}</legend>
+      <select
+        aria-label={`${label}: seleccionar existente`}
+        value={existing ? value : '__new__'}
+        onChange={(event) => onChange(event.target.value === '__new__' ? '' : event.target.value)}
+      >
+        <option value="__new__">Crear una tabla nueva...</option>
         {options.map((option) => (
-          <option key={option} value={option} />
+          <option key={option} value={option}>{option}</option>
         ))}
-      </datalist>
-    </label>
+      </select>
+      {!existing && (
+        <input
+          aria-label={`${label}: nuevo nombre`}
+          placeholder={placeholder}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
+    </fieldset>
   );
 }
 
@@ -1115,76 +1235,188 @@ function SchemaPreview({
   );
 }
 
+function ContractSelectField({
+  label,
+  value,
+  options,
+  onChange,
+  emptyLabel = 'No seleccionada',
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  emptyLabel?: string;
+}) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">{emptyLabel}</option>
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
+  );
+}
+
 function IncrementalStep({
   workflow,
   onProfile,
+  onContractChange,
+  onReport,
   onNext,
 }: {
   workflow: WorkflowState;
   onProfile: () => void;
+  onContractChange: (patch: Partial<WorkflowState>) => void;
+  onReport: () => void;
   onNext: () => void;
 }) {
-  const columns = workflow.sourceColumns ?? seedColumns;
-  const businessKeyLabel = workflow.businessKeys?.join(', ') || 'No detectada';
-  const watermarkLabel = workflow.watermarkColumn ?? 'No detectado';
-  const metricLabel = workflow.metricColumn ?? 'No detectada';
-  const strategy = workflow.businessKeys?.length ? 'MERGE' : 'FULL';
+  const columns = workflow.sourceColumns ?? [];
+  const profileColumns = Array.isArray(workflow.agentProfile?.columns)
+    ? workflow.agentProfile.columns.filter(
+        (item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object',
+      )
+    : [];
+  const profileByName = new Map(profileColumns.map((column) => [String(column.name), column]));
+  const columnNames = columns.map((column) => column.name);
+  const temporalColumns = columns
+    .filter((column) => ['TIMESTAMP', 'DATETIME', 'DATE'].includes(normalizedFieldType(column)))
+    .map((column) => column.name);
+  const numericColumns = columns
+    .filter((column) =>
+      ['INT64', 'INTEGER', 'FLOAT64', 'FLOAT', 'NUMERIC', 'BIGNUMERIC'].includes(normalizedFieldType(column)),
+    )
+    .map((column) => column.name);
+  const strategy = workflow.loadStrategy ?? ((workflow.businessKeys ?? []).length ? 'MERGE' : 'FULL');
+  const profileTable = String(workflow.agentProfile?.table ?? '');
+  const expectedTable = `${workflow.projectId}.${workflow.sourceDataset}.${workflow.sourceTable}`;
+  const profileMatches = Boolean(workflow.agentProfile) && profileTable === expectedTable;
+  const selectedKey = workflow.businessKeys?.[0] ?? '';
+  const keyEvidence = selectedKey ? profileByName.get(selectedKey) : undefined;
 
   const validationChecks = [
     {
-      label: `Business key: ${businessKeyLabel}`,
-      ok: (workflow.businessKeys ?? []).every((key) => columns.some((column) => column.name === key)),
+      label: 'Perfil corresponde a la tabla seleccionada',
+      ok: profileMatches,
+      detail: profileMatches
+        ? `BigQuery perfilo exactamente ${expectedTable}.`
+        : `Esperado: ${expectedTable}; perfil disponible: ${profileTable || 'ninguno'}.`,
     },
     {
-      label: `Watermark: ${watermarkLabel}`,
-      ok: !workflow.watermarkColumn || columns.some((column) => column.name === workflow.watermarkColumn),
+      label: 'Estrategia de carga consistente',
+      ok: strategy === 'FULL' || Boolean(selectedKey && columns.some((column) => column.name === selectedKey)),
+      detail: strategy === 'FULL'
+        ? 'FULL no exige business key.'
+        : keyEvidence?.business_key_candidate
+          ? `${selectedKey} es candidata por cero nulos y unicidad observada.`
+          : `${selectedKey || 'Sin clave'} fue seleccionada manualmente; MERGE requiere confirmar este criterio.`,
     },
     {
-      label: `Metrica: ${metricLabel}`,
-      ok: !workflow.metricColumn || columns.some((column) => column.name === workflow.metricColumn),
+      label: 'Watermark compatible',
+      ok: !workflow.watermarkColumn || temporalColumns.includes(workflow.watermarkColumn),
+      detail: workflow.watermarkColumn
+        ? `${workflow.watermarkColumn} existe y su tipo es temporal.`
+        : 'Sin watermark: permitido para FULL o MERGE sin filtro incremental.',
     },
     {
-      label: 'Columnas con tipo de dato',
-      ok: columns.every((column) => Boolean(column.type)),
+      label: 'Metrica de reconciliacion compatible',
+      ok: !workflow.metricColumn || numericColumns.includes(workflow.metricColumn),
+      detail: workflow.metricColumn
+        ? `${workflow.metricColumn} existe y tiene tipo numerico.`
+        : 'Sin metrica numerica seleccionada; se validaran filas y claves.',
     },
   ];
 
   return (
     <section className="card">
-      <h2>Estrategia de carga inferida</h2>
+      <h2>Estrategia de carga inferida y editable</h2>
       <p>
-        La inferencia es deterministica y editable en futuras iteraciones. Si no se detecta una
-        business key segura, el flujo usa FULL y no simula un MERGE.
+        La propuesta usa el perfil BigQuery de la tabla seleccionada. Puedes ajustarla antes de
+        confirmarla; una edicion queda identificada como decision humana.
       </p>
       <div className="formGrid three">
-        <Field label="Modo" value={strategy} />
-        <Field label="Business key" value={businessKeyLabel} />
-        <Field label="Watermark" value={watermarkLabel} />
-        <Field label="Metrica de reconciliacion" value={metricLabel} />
+        <ContractSelectField
+          label="Modo"
+          value={strategy}
+          options={['FULL', 'MERGE']}
+          emptyLabel="Selecciona modo"
+          onChange={(value) => onContractChange({
+            loadStrategy: value as 'FULL' | 'MERGE',
+            businessKeys: value === 'FULL' ? [] : workflow.businessKeys,
+          })}
+        />
+        <ContractSelectField
+          label="Business key"
+          value={selectedKey}
+          options={columnNames}
+          onChange={(value) => onContractChange({
+            businessKeys: value ? [value] : [],
+            loadStrategy: value ? 'MERGE' : 'FULL',
+          })}
+        />
+        <ContractSelectField
+          label="Watermark"
+          value={workflow.watermarkColumn ?? ''}
+          options={temporalColumns}
+          onChange={(value) => onContractChange({ watermarkColumn: value || undefined })}
+        />
+        <ContractSelectField
+          label="Metrica de reconciliacion"
+          value={workflow.metricColumn ?? ''}
+          options={numericColumns}
+          onChange={(value) => onContractChange({ metricColumn: value || undefined })}
+        />
         <Field
           label="Deduplicacion"
-          value={workflow.businessKeys?.length ? `${businessKeyLabel} + watermark` : 'No aplica'}
+          value={strategy === 'MERGE' && selectedKey ? `${selectedKey} + orden temporal` : 'No aplica'}
         />
         <Field label="Workflow version" value={String(currentVersion(workflow))} />
       </div>
       <div className="profileBox">
         <strong>Contrato detectado</strong>
-        <p>Tabla: {workflow.projectId}.{workflow.sourceDataset}.{workflow.sourceTable}</p>
+        <p>Tabla: {expectedTable}</p>
         <p>Columnas: {columns.length} · Estrategia propuesta: {strategy}</p>
-        <button onClick={onProfile}>Perfilar tabla con agente</button>
+        <p>Origen de inferencia: {workflow.inferenceSource ?? 'SCHEMA'}</p>
+        {(workflow.inferenceReasons ?? []).map((reason) => <small key={reason}>{reason}</small>)}
+        <div className="actions">
+          <button onClick={onProfile}>Perfilar tabla con agente</button>
+          <button onClick={onReport} disabled={!workflow.agentProfile}>Generar informe PDF</button>
+        </div>
       </div>
       {workflow.agentProfile && (
         <AgentProfilePanel profile={workflow.agentProfile} sessionId={workflow.agentSessionId} />
       )}
+      {workflow.profileReportUrl && (
+        <section className="pdfReportPanel">
+          <div className="sectionHeader">
+            <div>
+              <h3>Informe PDF de perfilamiento</h3>
+              <p>Documento generado desde evidencia BigQuery de {expectedTable}.</p>
+            </div>
+            <a href={workflow.profileReportUrl} download={`perfil-${workflow.sourceTable}.pdf`}>
+              Descargar PDF
+            </a>
+          </div>
+          <iframe title="Visor del informe de perfilamiento" src={workflow.profileReportUrl} />
+        </section>
+      )}
       <div className="validationBox">
-        <strong>Validacion deterministica de columnas</strong>
+        <strong>Validacion explicada del perfil y contrato</strong>
         {validationChecks.map((check) => (
-          <span key={check.label} className={check.ok ? 'checkOk' : 'checkFail'}>
-            {check.ok ? 'OK' : 'ERROR'} · {check.label}
-          </span>
+          <article key={check.label} className={check.ok ? 'checkOk' : 'checkFail'}>
+            <strong>{check.ok ? 'OK' : 'REVISAR'} · {check.label}</strong>
+            <span>{check.detail}</span>
+          </article>
         ))}
       </div>
-      <button className="primary" onClick={onNext}>Confirmar estrategia</button>
+      <button
+        className="primary"
+        disabled={validationChecks.some((check) => !check.ok)}
+        onClick={onNext}
+      >
+        Confirmar estrategia
+      </button>
     </section>
   );
 }
@@ -1211,14 +1443,15 @@ function AgentProfilePanel({
         </div>
         <span className="resultStatus">AGENT</span>
       </div>
+      <p><strong>Tabla perfilada:</strong> {String(profile.table ?? 'No informada')}</p>
       <div className="resultMetrics">
         <article><span>Filas</span><strong>{String(profile.row_count ?? 'N/A')}</strong></article>
         <article><span>Columnas perfiladas</span><strong>{columns.length}</strong></article>
-        <article><span>Campos críticos</span><strong>{criticalColumns.length}</strong></article>
+        <article><span>Campos criticos</span><strong>{criticalColumns.length}</strong></article>
         <article><span>Claves candidatas</span><strong>{keyCandidates.length}</strong></article>
       </div>
       <p>Claves candidatas: {keyCandidates.map(String).join(', ') || 'Ninguna'}</p>
-      <small>Session: {sessionId ?? 'no informada'} · Toda métrica proviene de BigQuery.</small>
+      <small>Session: {sessionId ?? 'no informada'} · Toda metrica proviene de BigQuery.</small>
     </section>
   );
 }

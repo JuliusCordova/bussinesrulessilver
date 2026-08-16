@@ -556,3 +556,140 @@ pre {
     grid-template-columns: 1fr;
   }
 }
+
+
+.resultPanel {
+  border: 1px solid #d7d1c8;
+  border-left: 6px solid #168a50;
+  border-radius: 10px;
+  margin-top: 24px;
+  padding: 20px;
+}
+
+.resultPanel.nonConformant {
+  background: #fff2f0;
+  border-left-color: #d93025;
+}
+
+.resultPanel.conformant {
+  background: #edf9f2;
+}
+
+.resultHeader {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.resultHeader h3 {
+  margin: 4px 0 0;
+}
+
+.resultEyebrow {
+  color: #65605c;
+  font-size: 12px;
+}
+
+.resultStatus,
+.checkBadge {
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 6px 10px;
+}
+
+.resultPanel.conformant .resultStatus {
+  background: #c9f0d9;
+  color: #08783e;
+}
+
+.resultPanel.nonConformant .resultStatus {
+  background: #ffd7d2;
+  color: #a32018;
+}
+
+.resultMetrics {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 20px 0;
+}
+
+.resultMetrics article {
+  background: #fff;
+  border: 1px solid #e2dcd2;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.resultMetrics span,
+.resultTables dt {
+  color: #65605c;
+  display: block;
+  font-size: 11px;
+}
+
+.resultMetrics strong {
+  display: block;
+  font-size: 22px;
+  margin-top: 6px;
+}
+
+.resultTables {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.resultTables div {
+  min-width: 0;
+}
+
+.resultTables dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.resultChecks {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.resultChecks article {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e2dcd2;
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+}
+
+.resultChecks article.pass .checkBadge {
+  background: #c9f0d9;
+  color: #08783e;
+}
+
+.resultChecks article.fail .checkBadge {
+  background: #ffd7d2;
+  color: #a32018;
+}
+
+.resultChecks article.skipped .checkBadge {
+  background: #eeeae4;
+  color: #65605c;
+}
+
+.resultChecks small {
+  color: #65605c;
+  display: block;
+  margin-top: 3px;
+}
+
+@media (max-width: 980px) {
+  .resultMetrics,
+  .resultTables {
+    grid-template-columns: 1fr;
+  }
+}

@@ -24,7 +24,7 @@ def build_table_profiler_agent() -> LlmAgent:
         instruction=(
             "Usa profile_selected_table exactamente una vez con la tabla indicada. "
             "No inventes métricas. Devuelve JSON válido con schema, cardinalidades, "
-            "nulos, partición, clustering y alertas observables."
+            "nulos, claves candidatas, partición, clustering y alertas observables."
         ),
         tools=[profile_selected_table],
         output_key="table_profile",
@@ -37,13 +37,14 @@ def build_quality_rule_advisor_agent() -> LlmAgent:
         model=_model(),
         description="Recomienda reglas de calidad basadas en perfilamiento.",
         instruction=(
-            "Lee el perfil disponible en {table_profile}. Llama quality_rule_evidence "
-            "con ese JSON. Propón solo reglas respaldadas por evidencia. Cada regla "
-            "debe incluir rule_name, rule_dimension, rule_type, column_name, "
-            "rule_parameters, severity_level, confidence y rationale. Marca las "
-            "propuestas como PENDING_APPROVAL. Devuelve JSON válido."
+            "Obtén el perfil con profile_selected_table cuando no esté disponible "
+            "en el contexto y luego llama quality_rule_evidence. Pasa también las "
+            "business_keys declaradas. Los campos críticos con nulos deben producir "
+            "una propuesta NOT_NULL en estado FAILING; las claves deben evaluar "
+            "NOT_NULL y UNIQUE. Propón solo reglas respaldadas por evidencia. Cada "
+            "regla queda PENDING_APPROVAL y la respuesta debe ser JSON válido."
         ),
-        tools=[quality_rule_evidence],
+        tools=[profile_selected_table, quality_rule_evidence],
         output_key="quality_rule_proposals",
     )
 
@@ -54,11 +55,12 @@ def build_business_rule_validator_agent() -> LlmAgent:
         model=_model(),
         description="Valida reglas contra el schema y contrato ejecutable.",
         instruction=(
-            "Valida las reglas recibidas contra {table_profile}. Usa siempre "
-            "validate_business_rules. No declares una regla válida si la tool la "
-            "rechaza. Explica errores accionables y devuelve JSON válido."
+            "Obtén el perfil con profile_selected_table cuando sea necesario. "
+            "Valida las reglas recibidas usando siempre validate_business_rules. "
+            "No declares una regla válida si la tool la rechaza. Explica errores "
+            "accionables y devuelve JSON válido."
         ),
-        tools=[validate_business_rules],
+        tools=[profile_selected_table, validate_business_rules],
         output_key="business_rule_validation",
     )
 

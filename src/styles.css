@@ -693,3 +693,80 @@ pre {
     grid-template-columns: 1fr;
   }
 }
+
+
+.agentPanel {
+  background: #f2f7ff;
+  border: 1px solid #bed2f6;
+  border-left: 6px solid #3974d9;
+  border-radius: 10px;
+  margin: 18px 0;
+  padding: 18px;
+}
+
+.agentPanel .resultStatus {
+  background: #dce8ff;
+  color: #2459b2;
+}
+
+.agentPanel small {
+  color: #65605c;
+}
+
+.agentRuleList {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.agentRuleList article {
+  background: #f7f6f4;
+  border: 1px solid #e2dcd2;
+  border-radius: 9px;
+  padding: 14px;
+}
+
+.agentRuleList article.approved {
+  background: #edf9f2;
+  border-color: #82cda4;
+}
+
+.agentRuleList label {
+  align-items: flex-start;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+}
+
+.agentRuleList input {
+  margin-top: 4px;
+}
+
+.agentRuleList span,
+.agentRuleList small {
+  color: #65605c;
+  display: block;
+  margin-top: 5px;
+}
+
+.agentRuleList em {
+  display: block;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  margin-top: 10px;
+}
+
+.agentEmpty {
+  background: #f7f6f4;
+  border: 1px dashed #b9b1a7;
+  border-radius: 9px;
+  display: grid;
+  gap: 6px;
+  margin: 20px 0;
+  padding: 18px;
+}
+
+.agentEmpty span {
+  color: #65605c;
+}

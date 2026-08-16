@@ -984,40 +984,53 @@ function SchemaPreview({
 }
 
 function IncrementalStep({ workflow, onNext }: { workflow: WorkflowState; onNext: () => void }) {
+  const columns = workflow.sourceColumns ?? seedColumns;
+  const businessKeyLabel = workflow.businessKeys?.join(', ') || 'No detectada';
+  const watermarkLabel = workflow.watermarkColumn ?? 'No detectado';
+  const metricLabel = workflow.metricColumn ?? 'No detectada';
+  const strategy = workflow.businessKeys?.length ? 'MERGE' : 'FULL';
+
   const validationChecks = [
     {
-      label: `Business key ${seedSource.businessKey}`,
-      ok: seedSchemaColumns.some((column) => column.name === seedSource.businessKey),
+      label: `Business key: ${businessKeyLabel}`,
+      ok: (workflow.businessKeys ?? []).every((key) => columns.some((column) => column.name === key)),
     },
     {
-      label: `Watermark ${seedSource.watermark}`,
-      ok: seedSchemaColumns.some((column) => column.name === seedSource.watermark),
+      label: `Watermark: ${watermarkLabel}`,
+      ok: !workflow.watermarkColumn || columns.some((column) => column.name === workflow.watermarkColumn),
     },
     {
-      label: `Metrica ${seedSource.metric}`,
-      ok: seedSchemaColumns.some((column) => column.name === seedSource.metric),
+      label: `Metrica: ${metricLabel}`,
+      ok: !workflow.metricColumn || columns.some((column) => column.name === workflow.metricColumn),
     },
     {
-      label: 'Columnas con data_type requerido por backend',
-      ok: seedSchemaColumns.every((column) => Boolean(column.data_type)),
+      label: 'Columnas con tipo de dato',
+      ok: columns.every((column) => Boolean(column.type)),
     },
   ];
 
   return (
     <section className="card">
-      <h2>Estrategia de carga</h2>
+      <h2>Estrategia de carga inferida</h2>
+      <p>
+        La inferencia es deterministica y editable en futuras iteraciones. Si no se detecta una
+        business key segura, el flujo usa FULL y no simula un MERGE.
+      </p>
       <div className="formGrid three">
-        <Field label="Modo" value="INCREMENTAL" />
-        <Field label="Business key" value={seedSource.businessKey} />
-        <Field label="Watermark" value={seedSource.watermark} />
-        <Field label="Deduplicacion" value="producto_id + watermark" />
-        <Field label="Politica registros tardios" value="Advertir y registrar excepcion" />
+        <Field label="Modo" value={strategy} />
+        <Field label="Business key" value={businessKeyLabel} />
+        <Field label="Watermark" value={watermarkLabel} />
+        <Field label="Metrica de reconciliacion" value={metricLabel} />
+        <Field
+          label="Deduplicacion"
+          value={workflow.businessKeys?.length ? `${businessKeyLabel} + watermark` : 'No aplica'}
+        />
         <Field label="Workflow version" value={String(currentVersion(workflow))} />
       </div>
       <div className="profileBox">
-        <strong>Perfil BigQuery semilla</strong>
-        <p>Filas: 13 · Distinct producto_id: 13 · SUM prima_base: 21390</p>
-        <p>Rango watermark: 2026-07-31 20:30:00 → 2026-08-01 20:30:00</p>
+        <strong>Contrato detectado</strong>
+        <p>Tabla: {workflow.projectId}.{workflow.sourceDataset}.{workflow.sourceTable}</p>
+        <p>Columnas: {columns.length} · Estrategia propuesta: {strategy}</p>
       </div>
       <div className="validationBox">
         <strong>Validacion deterministica de columnas</strong>

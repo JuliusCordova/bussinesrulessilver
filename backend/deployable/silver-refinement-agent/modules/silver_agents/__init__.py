@@ -2,6 +2,7 @@
 
 from .agents import (
     build_business_rule_validator_agent,
+    build_mapping_advisor_agent,
     build_notebook_generator_agent,
     build_quality_rule_advisor_agent,
     build_silver_orchestrator,
@@ -10,6 +11,7 @@ from .agents import (
 
 __all__ = [
     "build_business_rule_validator_agent",
+    "build_mapping_advisor_agent",
     "build_notebook_generator_agent",
     "build_quality_rule_advisor_agent",
     "build_silver_orchestrator",

@@ -49,6 +49,8 @@ export interface WorkflowState {
   inferenceSource?: 'SCHEMA' | 'BIGQUERY_PROFILE' | 'USER';
   inferenceReasons?: string[];
   profileReportUrl?: string;
+  mappingRules?: MappingRule[];
+  mappingSource?: 'DIRECT' | 'DETERMINISTIC' | 'AGENT' | 'USER';
   agentProfile?: Record<string, unknown>;
   qualityRuleProposals?: Array<Record<string, unknown>>;
   approvedQualityRules?: Array<Record<string, unknown>>;
@@ -88,11 +90,17 @@ export interface SeedColumn {
 }
 
 export interface MappingRule {
-  sourceColumn?: string;
+  sourceColumn: string;
   targetColumn: string;
   targetType: string;
   transformationType: string;
-  expression?: string;
+  include: boolean;
+  nullable: boolean;
+  parameters?: Record<string, unknown>;
+  confidence?: number;
+  reason?: string;
+  risk?: string;
+  requiresApproval?: boolean;
 }
 
 export interface BusinessRule {

@@ -90,6 +90,7 @@ steps:
         assert status == 200, body
         assert {item["name"] for item in agents} == {
             "table-profiler",
+            "mapping-advisor",
             "quality-rule-advisor",
             "business-rule-validator",
             "notebook-generator",
@@ -138,6 +139,33 @@ steps:
             "columns": sorted(column_names),
         }
 
+        mapping_request = dict(profile_request)
+        mapping_request["columns"] = [
+            {
+                "name": item["name"],
+                "type": item["type"],
+                "mode": item.get("mode", "NULLABLE"),
+            }
+            for item in profile["columns"]
+        ]
+        status, _, body = request(
+            "/silver-agents/mapping-advisor/run",
+            method="POST",
+            payload=mapping_request,
+            timeout=600,
+        )
+        mapping_result = json.loads(body)
+        assert status == 200, body
+        mapping_evidence = mapping_result.get("evidence") or {}
+        mapped_sources = {
+            item["source_column"] for item in mapping_evidence.get("columns", [])
+        }
+        assert mapped_sources == column_names, {
+            "expected": sorted(column_names),
+            "actual": sorted(mapped_sources),
+        }
+        assert "producto_id" not in mapped_sources
+
         report_req = urllib.request.Request(
             base + "/silver-agents/table-profiler/report",
             data=json.dumps(profile_request).encode(),
@@ -158,6 +186,7 @@ steps:
             "profile_rows": profile.get("row_count"),
             "session_id": result.get("session_id"),
             "profile_pdf_bytes": len(pdf),
+            "mapping_columns": len(mapped_sources),
             "seed_leak": False,
         }, ensure_ascii=False))
 

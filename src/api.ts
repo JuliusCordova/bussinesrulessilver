@@ -155,6 +155,7 @@ export const silverApi = {
 
 export type SilverAgentName =
   | 'table-profiler'
+  | 'mapping-advisor'
   | 'quality-rule-advisor'
   | 'business-rule-validator'
   | 'notebook-generator'

@@ -99,18 +99,17 @@ steps:
         profile_request = {
             "project_id": "proyectopersonal-480420",
             "source_dataset": "seguros_bronce",
-            "source_table": "cat_producto",
+            "source_table": "pagos_primas",
             "target_project_id": "proyectopersonal-480420",
             "target_dataset": "seguros_silver",
-            "target_table": "cat_producto",
+            "target_table": "pagos_primas",
             "columns": [],
             "load_strategy": {
-                "type": "MERGE",
-                "business_keys": ["producto_id"],
-                "watermark_column": "bronze_fecha_ingesta",
+                "type": "FULL",
+                "business_keys": [],
             },
             "physical_design": {},
-            "business_keys": ["producto_id"],
+            "business_keys": [],
             "watermark_column": "bronze_fecha_ingesta",
             "business_rules": [],
             "approved_quality_rules": [],
@@ -132,6 +131,25 @@ steps:
         }
         assert int(profile["row_count"]) > 0, profile
         assert profile.get("columns"), profile
+        assert profile.get("table") == "proyectopersonal-480420.seguros_bronce.pagos_primas", profile
+        column_names = {item["name"] for item in profile["columns"]}
+        assert "producto_id" not in column_names, {
+            "message": "The selected table profile leaked cat_producto seed columns",
+            "columns": sorted(column_names),
+        }
+
+        report_req = urllib.request.Request(
+            base + "/silver-agents/table-profiler/report",
+            data=json.dumps(profile_request).encode(),
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(report_req, timeout=600) as response:
+            pdf = response.read()
+            assert response.status == 200
+            assert response.headers.get_content_type() == "application/pdf"
+            assert pdf.startswith(b"%PDF-")
+            assert len(pdf) > 1500
 
         print(json.dumps({
             "health": health,
@@ -139,6 +157,8 @@ steps:
             "profile_table": profile.get("table"),
             "profile_rows": profile.get("row_count"),
             "session_id": result.get("session_id"),
+            "profile_pdf_bytes": len(pdf),
+            "seed_leak": False,
         }, ensure_ascii=False))
 
 images:

@@ -44,11 +44,18 @@ class BigQueryResultValidator:
         source_table = self._table_fqn(source_parts, "source") if source_parts else None
         business_keys = self._business_keys(payload)
         metric_column = self._metric_column(payload, business_keys)
+        watermark_column = self._watermark_column(payload)
 
         target_profile = self._target_profile(target_table, business_keys, metric_column)
         duplicate_count = self._duplicate_count(target_table, business_keys)
         diff_count = (
-            self._source_target_diff(source_table, target_table, business_keys, metric_column)
+            self._source_target_diff(
+                source_table,
+                target_table,
+                business_keys,
+                metric_column,
+                watermark_column,
+            )
             if source_table
             else None
         )
@@ -134,6 +141,17 @@ class BigQueryResultValidator:
             self._identifier(key, "business_key")
         return normalized
 
+    def _watermark_column(self, payload: dict[str, Any]) -> str | None:
+        strategy = (
+            payload.get("load_strategy")
+            or (payload.get("specification") or {}).get("load_strategy")
+            or {}
+        )
+        value = strategy.get("watermark_column")
+        if not value:
+            return None
+        return self._identifier(str(value), "watermark_column")
+
     def _metric_column(self, payload: dict[str, Any], business_keys: list[str]) -> str | None:
         explicit = payload.get("metric_column") or payload.get("metric")
         if explicit:
@@ -199,18 +217,25 @@ class BigQueryResultValidator:
         target_table: str,
         business_keys: list[str],
         metric_column: str | None,
+        watermark_column: str | None,
     ) -> int:
         if not business_keys:
             return 0
         keys = ", ".join(f"`{key}`" for key in business_keys)
         using_keys = ", ".join(f"`{key}`" for key in business_keys)
+        partition_keys = ", ".join(f"`{key}`" for key in business_keys)
+        order_expression = (
+            f"`{watermark_column}` DESC NULLS LAST"
+            if watermark_column
+            else "FARM_FINGERPRINT(TO_JSON_STRING(source_row)) DESC"
+        )
         source_metric = (
-            f"SUM(SAFE_CAST(`{metric_column}` AS NUMERIC)) AS source_metric"
+            f"SAFE_CAST(`{metric_column}` AS NUMERIC) AS source_metric"
             if metric_column
             else "CAST(NULL AS NUMERIC) AS source_metric"
         )
         target_metric = (
-            f"SUM(SAFE_CAST(`{metric_column}` AS NUMERIC)) AS target_metric"
+            f"SAFE_CAST(`{metric_column}` AS NUMERIC) AS target_metric"
             if metric_column
             else "CAST(NULL AS NUMERIC) AS target_metric"
         )
@@ -220,13 +245,22 @@ class BigQueryResultValidator:
             else ""
         )
         query = f"""
-        WITH source_profile AS (
-          SELECT {keys}, COUNT(1) AS source_rows, {source_metric}
-          FROM `{source_table}`
-          GROUP BY {keys}
+        WITH ranked_source AS (
+          SELECT
+            source_row.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY {partition_keys}
+              ORDER BY {order_expression}
+            ) AS silver_merge_rank
+          FROM `{source_table}` AS source_row
+        ),
+        source_profile AS (
+          SELECT {keys}, 1 AS source_rows, {source_metric}
+          FROM ranked_source
+          WHERE silver_merge_rank = 1
         ),
         target_profile AS (
-          SELECT {keys}, COUNT(1) AS target_rows, {target_metric}
+          SELECT {keys}, COUNT(1) AS target_rows, ANY_VALUE({target_metric}) AS target_metric
           FROM `{target_table}`
           GROUP BY {keys}
         )

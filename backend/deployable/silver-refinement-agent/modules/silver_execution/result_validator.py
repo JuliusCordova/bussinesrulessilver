@@ -234,10 +234,10 @@ class BigQueryResultValidator:
             if metric_column
             else "CAST(NULL AS NUMERIC) AS source_metric"
         )
-        target_metric = (
-            f"SAFE_CAST(`{metric_column}` AS NUMERIC) AS target_metric"
+        target_metric_expression = (
+            f"SAFE_CAST(`{metric_column}` AS NUMERIC)"
             if metric_column
-            else "CAST(NULL AS NUMERIC) AS target_metric"
+            else "CAST(NULL AS NUMERIC)"
         )
         metric_predicate = (
             "OR ABS(IFNULL(source_metric, 0) - IFNULL(target_metric, 0)) > 0.000001"
@@ -260,7 +260,10 @@ class BigQueryResultValidator:
           WHERE silver_merge_rank = 1
         ),
         target_profile AS (
-          SELECT {keys}, COUNT(1) AS target_rows, ANY_VALUE({target_metric}) AS target_metric
+          SELECT
+            {keys},
+            COUNT(1) AS target_rows,
+            ANY_VALUE({target_metric_expression}) AS target_metric
           FROM `{target_table}`
           GROUP BY {keys}
         )

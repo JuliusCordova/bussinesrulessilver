@@ -23,7 +23,8 @@ export type StepId =
   | 'mapping'
   | 'rules'
   | 'artifacts'
-  | 'execution';
+  | 'execution'
+  | 'governance';
 
 export interface WorkflowState {
   workflowId?: string;
@@ -54,6 +55,9 @@ export interface WorkflowState {
   agentProfile?: Record<string, unknown>;
   qualityRuleProposals?: Array<Record<string, unknown>>;
   approvedQualityRules?: Array<Record<string, unknown>>;
+  qualityReviewed?: boolean;
+  qualityReviewDecision?: string;
+  generatedArtifacts?: GeneratedArtifact[];
   agentSessionId?: string;
   lastAction?: string;
   error?: string;
@@ -114,4 +118,17 @@ export interface CatalogField {
   type: string;
   mode?: string;
   description?: string;
+}
+
+
+export interface GeneratedArtifact {
+  artifact_id?: string;
+  artifact_type: string;
+  artifact_name: string;
+  artifact_version?: number;
+  generation_status?: string;
+  validation_status?: string;
+  storage_uri?: string | null;
+  content_hash?: string | null;
+  metadata?: Record<string, unknown>;
 }

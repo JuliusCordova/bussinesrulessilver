@@ -4,7 +4,9 @@ set -euo pipefail
 PROJECT_ID="proyectopersonal-480420"
 REGION="us-central1"
 VALIDATED_COMMIT="de7f84b"
-BACKEND_TEST="silver-refinement-agent-merge-test"
+VALIDATED_BACKEND_TAG="agents-8.2.0-a21715fb-2141-4cc5-84a6-0d2eb8779a78"
+BACKEND_REPOSITORY="us-central1-docker.pkg.dev/$PROJECT_ID/dataops/silver-refinement-agent"
+VALIDATED_BACKEND_IMAGE="$BACKEND_REPOSITORY:$VALIDATED_BACKEND_TAG"
 BACKEND_PROD="silver-refinement-agent"
 FRONTEND_PROD="business-rules-silver-ui"
 BACKEND_URL="https://silver-refinement-agent-mkqutd4koq-uc.a.run.app"
@@ -80,13 +82,13 @@ git cat-file -e "$VALIDATED_COMMIT^{commit}"
 git diff --quiet
 git diff --cached --quiet
 
-TEST_REVISION="$(gcloud run services describe "$BACKEND_TEST"   --project="$PROJECT_ID" --region="$REGION"   --format='value(status.latestReadyRevisionName)')"
-VALIDATED_DIGEST="$(gcloud run revisions describe "$TEST_REVISION"   --project="$PROJECT_ID" --region="$REGION"   --format='value(status.imageDigest)')"
+VALIDATED_DIGEST="$(gcloud artifacts docker images describe "$VALIDATED_BACKEND_IMAGE"   --project="$PROJECT_ID"   --format='value(image_summary.digest)')"
 test -n "$VALIDATED_DIGEST"
+VALIDATED_BACKEND_DIGEST="$BACKEND_REPOSITORY@$VALIDATED_DIGEST"
 
 echo "VALIDATED_COMMIT=$VALIDATED_COMMIT"
-echo "TEST_REVISION=$TEST_REVISION"
-echo "VALIDATED_DIGEST=$VALIDATED_DIGEST"
+echo "VALIDATED_BACKEND_IMAGE=$VALIDATED_BACKEND_IMAGE"
+echo "VALIDATED_BACKEND_DIGEST=$VALIDATED_BACKEND_DIGEST"
 
 gcloud run services describe "$BACKEND_PROD"   --project="$PROJECT_ID" --region="$REGION"   --format='yaml(status.latestReadyRevisionName,status.traffic)'   > "/tmp/backend-prod-before-$STAMP.yaml"
 gcloud run services describe "$FRONTEND_PROD"   --project="$PROJECT_ID" --region="$REGION"   --format='yaml(status.latestReadyRevisionName,status.traffic)'   > "/tmp/frontend-prod-before-$STAMP.yaml"
@@ -94,12 +96,12 @@ gcloud run services describe "$FRONTEND_PROD"   --project="$PROJECT_ID" --region
 echo "=== PROMOTE EXACT BACKEND CANDIDATE ==="
 BACKEND_REVISION="silver-refinement-agent-validated-$STAMP"
 BACKEND_YAML="/tmp/backend-validated-$STAMP.yaml"
-prepare_yaml "$BACKEND_PROD" "$VALIDATED_DIGEST" "$BACKEND_REVISION" "$BACKEND_YAML"
+prepare_yaml "$BACKEND_PROD" "$VALIDATED_BACKEND_DIGEST" "$BACKEND_REVISION" "$BACKEND_YAML"
 gcloud run services replace "$BACKEND_YAML"   --project="$PROJECT_ID" --region="$REGION" --quiet
 gcloud run services update-traffic "$BACKEND_PROD"   --project="$PROJECT_ID" --region="$REGION"   --to-revisions="$BACKEND_REVISION=100" --quiet
 
 PROD_DIGEST="$(gcloud run revisions describe "$BACKEND_REVISION"   --project="$PROJECT_ID" --region="$REGION"   --format='value(status.imageDigest)')"
-test "$PROD_DIGEST" = "$VALIDATED_DIGEST"
+test "$PROD_DIGEST" = "$VALIDATED_BACKEND_DIGEST"
 curl -fsS "$BACKEND_URL/health" | jq -e '.status == "ok" and .version == "8.2.0"'
 curl -fsS "$BACKEND_URL/silver-agents" | jq -e   'map(.name) | sort == ["business-rule-validator","mapping-advisor","notebook-generator","orchestrator","quality-rule-advisor","table-profiler"]'
 

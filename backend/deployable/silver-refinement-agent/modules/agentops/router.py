@@ -4,6 +4,7 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from modules.silver_agents.governance_repository import AgentGovernanceRepository
 from modules.silver_execution.watermark_repository import WatermarkRepository
 
 from .alerting import AgentOpsAlertService, AlertNotFoundError
@@ -39,6 +40,42 @@ def get_agentops_service() -> AgentOpsService:
 
 def get_alert_service() -> AgentOpsAlertService:
     return AgentOpsAlertService()
+
+
+def get_agent_governance_repository() -> AgentGovernanceRepository:
+    return AgentGovernanceRepository()
+
+
+@router.get("/governance/summary")
+def get_agent_governance_summary(
+    repository: AgentGovernanceRepository = Depends(
+        get_agent_governance_repository
+    ),
+) -> dict:
+    try:
+        return repository.fetch_summary()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No fue posible obtener gobierno agéntico: {exc}",
+        ) from exc
+
+
+@router.get("/governance/runs")
+def get_agent_governance_runs(
+    limit: int = Query(default=50, ge=1, le=200),
+    repository: AgentGovernanceRepository = Depends(
+        get_agent_governance_repository
+    ),
+) -> dict:
+    try:
+        runs = repository.fetch_runs(limit=limit)
+        return {"runs": runs, "total": len(runs)}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No fue posible obtener historial agéntico: {exc}",
+        ) from exc
 
 
 @router.get("/dashboard", response_model=AgentOpsDashboardResponse)

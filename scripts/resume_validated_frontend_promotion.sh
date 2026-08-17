@@ -21,20 +21,36 @@ curl -fsS "$BACKEND_URL/health" | jq -e '.status == "ok" and .version == "8.2.0"
 echo "=== SNAPSHOT CURRENT FRONTEND TRAFFIC ==="
 gcloud run services describe "$FRONTEND_SERVICE"   --project="$PROJECT_ID" --region="$REGION"   --format='yaml(status.latestReadyRevisionName,status.traffic)'   | tee "/tmp/frontend-before-resume-$STAMP.yaml"
 
-echo "=== DEPLOY VALIDATED FRONTEND WITH NO TRAFFIC ==="
-gcloud run deploy "$FRONTEND_SERVICE"   --project="$PROJECT_ID"   --region="$REGION"   --image="$FRONTEND_IMAGE"   --platform=managed   --allow-unauthenticated   --port=8080   --memory=512Mi   --cpu=1   --timeout=300   --revision-suffix="$SUFFIX"   --no-traffic   --quiet
+echo "=== RESOLVE VALIDATED FRONTEND REVISION ==="
+FRONTEND_REPOSITORY="${FRONTEND_IMAGE%%:*}"
+FRONTEND_DIGEST="$(gcloud artifacts docker images describe "$FRONTEND_IMAGE"   --project="$PROJECT_ID"   --format='value(image_summary.digest)')"
+EXPECTED_FRONTEND_DIGEST="$FRONTEND_REPOSITORY@$FRONTEND_DIGEST"
+NEW_REVISION="$(gcloud run services describe "$FRONTEND_SERVICE"   --project="$PROJECT_ID" --region="$REGION"   --format='value(status.latestCreatedRevisionName)')"
+CURRENT_CREATED_DIGEST="$(gcloud run revisions describe "$NEW_REVISION"   --project="$PROJECT_ID" --region="$REGION"   --format='value(status.imageDigest)')"
 
-NEW_REVISION="$(gcloud run services describe "$FRONTEND_SERVICE"   --project="$PROJECT_ID" --region="$REGION"   --format='value(status.latestReadyRevisionName)')"
-test -n "$NEW_REVISION"
+if [[ "$CURRENT_CREATED_DIGEST" != "$EXPECTED_FRONTEND_DIGEST" ]]; then
+  echo "=== DEPLOY VALIDATED FRONTEND WITH NO TRAFFIC ==="
+  gcloud run deploy "$FRONTEND_SERVICE"   --project="$PROJECT_ID"   --region="$REGION"   --image="$FRONTEND_IMAGE"   --platform=managed   --allow-unauthenticated   --port=8080   --memory=512Mi   --cpu=1   --timeout=300   --revision-suffix="$SUFFIX"   --no-traffic   --quiet
+  NEW_REVISION="$(gcloud run services describe "$FRONTEND_SERVICE"   --project="$PROJECT_ID" --region="$REGION"   --format='value(status.latestCreatedRevisionName)')"
+  CURRENT_CREATED_DIGEST="$(gcloud run revisions describe "$NEW_REVISION"   --project="$PROJECT_ID" --region="$REGION"   --format='value(status.imageDigest)')"
+fi
+
+test "$CURRENT_CREATED_DIGEST" = "$EXPECTED_FRONTEND_DIGEST"
 
 echo "=== VERIFY REVISION IMAGE ==="
 gcloud run revisions describe "$NEW_REVISION"   --project="$PROJECT_ID" --region="$REGION"   --format='yaml(metadata.name,spec.containers[0].image,status.imageDigest)'
 
-REVISION_URL="https://$SUFFIX---business-rules-silver-ui-mkqutd4koq-uc.a.run.app"
-INDEX_HTML="$(curl -fsS "$REVISION_URL")"
+echo "=== TAG REVISION FOR ZERO-TRAFFIC VALIDATION ==="
+PREVIEW_TAG="validatedpreview"
+gcloud run services update-traffic "$FRONTEND_SERVICE"   --project="$PROJECT_ID" --region="$REGION"   --set-tags="$PREVIEW_TAG=$NEW_REVISION"   --quiet
+REVISION_URL="$(gcloud run services describe "$FRONTEND_SERVICE"   --project="$PROJECT_ID" --region="$REGION"   --format=json | jq -r --arg tag "$PREVIEW_TAG" '.status.traffic[] | select(.tag == $tag) | .url')"
+test -n "$REVISION_URL"
+test "$REVISION_URL" != "null"
+
+INDEX_HTML="$(curl --retry 10 --retry-all-errors --retry-delay 2 -fsS "$REVISION_URL")"
 ASSET_PATH="$(printf '%s' "$INDEX_HTML" | sed -n 's/.*src="\([^"]*\.js\)".*/\1/p' | head -1)"
 test -n "$ASSET_PATH"
-curl -fsS "$REVISION_URL$ASSET_PATH" > "/tmp/frontend-resume-$STAMP.js"
+curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "$REVISION_URL$ASSET_PATH" > "/tmp/frontend-resume-$STAMP.js"
 grep -Fq "$BACKEND_URL" "/tmp/frontend-resume-$STAMP.js"
 ! grep -Fq "silver-refinement-agent-merge-test" "/tmp/frontend-resume-$STAMP.js"
 

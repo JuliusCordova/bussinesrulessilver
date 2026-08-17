@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from google.cloud import storage
 
 from .artifact_generator import ArtifactGeneratorService
@@ -191,3 +191,75 @@ def get_current_artifact_content(
         "artifact": record.model_dump(mode="json"),
         "content": content,
     }
+
+@router.get(
+    "/specs/{spec_id}/artifacts/current/{artifact_type}/download"
+)
+def download_current_artifact(
+    spec_id: str,
+    artifact_type: ArtifactType,
+) -> Response:
+    """Download a governed artifact from Cloud Storage."""
+
+    record = _repository().get_current(spec_id, artifact_type)
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No existe un artefacto vigente de tipo "
+                f"{artifact_type.value} para la especificación {spec_id}."
+            ),
+        )
+
+    storage_uri = str(record.storage_uri or "")
+    if not storage_uri.startswith("gs://"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"El artefacto {artifact_type.value} no posee una URI válida.",
+        )
+
+    bucket_and_blob = storage_uri[5:].split("/", 1)
+    if len(bucket_and_blob) != 2 or not all(bucket_and_blob):
+        raise HTTPException(
+            status_code=409,
+            detail=f"URI de artefacto inválida: {storage_uri}",
+        )
+
+    bucket_name, blob_name = bucket_and_blob
+    try:
+        content = (
+            storage.Client()
+            .bucket(bucket_name)
+            .blob(blob_name)
+            .download_as_bytes()
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"No fue posible descargar {artifact_type.value} "
+                "desde Cloud Storage."
+            ),
+        ) from exc
+
+    filename = str(record.artifact_name or artifact_type.value.lower())
+    suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    media_types = {
+        "zip": "application/zip",
+        "ipynb": "application/x-ipynb+json",
+        "json": "application/json",
+        "py": "text/x-python",
+        "sql": "application/sql",
+        "md": "text/markdown",
+        "txt": "text/plain",
+    }
+    return Response(
+        content=content,
+        media_type=media_types.get(suffix, "application/octet-stream"),
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Artifact-Type": artifact_type.value,
+            "X-Artifact-Version": str(record.artifact_version),
+        },
+    )
+

@@ -53,6 +53,8 @@ steps:
       - -c
       - |
         import json
+        import time
+        import urllib.error
         import urllib.request
 
         base = "https://silver-refinement-agent-merge-test-mkqutd4koq-uc.a.run.app"
@@ -175,14 +177,33 @@ steps:
             }
             for item in profile["columns"]
         ]
-        status, _, body = request(
-            "/silver-agents/mapping-advisor/run",
-            method="POST",
-            payload=mapping_request,
-            timeout=600,
-        )
+        mapping_errors = []
+        for attempt in range(1, 4):
+            try:
+                status, _, body = request(
+                    "/silver-agents/mapping-advisor/run",
+                    method="POST",
+                    payload=mapping_request,
+                    timeout=600,
+                )
+                if status == 200:
+                    break
+                mapping_errors.append(f"attempt={attempt} status={status} body={body}")
+            except urllib.error.HTTPError as exc:
+                error_body = exc.read().decode(errors="replace")
+                mapping_errors.append(
+                    f"attempt={attempt} status={exc.code} body={error_body}"
+                )
+            if attempt < 3:
+                time.sleep(5 * attempt)
+        else:
+            raise AssertionError({
+                "message": "Mapping advisor failed after three attempts",
+                "errors": mapping_errors,
+            })
+
         mapping_result = json.loads(body)
-        assert status == 200, body
+        assert status == 200, {"body": body, "errors": mapping_errors}
         mapping_evidence = mapping_result.get("evidence") or {}
         mapped_sources = {
             item["source_column"] for item in mapping_evidence.get("columns", [])

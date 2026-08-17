@@ -95,3 +95,11 @@ def test_bigquery_result_validator_returns_conformant_response() -> None:
     assert result.metric_sum == 21390
     assert all(check.status == "PASS" for check in result.checks)
     assert len(client.queries) == 3
+
+    reconciliation_query = next(
+        query for query in client.queries if "diff_count" in query
+    )
+    assert "ROW_NUMBER() OVER" in reconciliation_query
+    assert "PARTITION BY `producto_id`" in reconciliation_query
+    assert "`bronze_fecha_ingesta` DESC NULLS LAST" in reconciliation_query
+    assert "WHERE silver_merge_rank = 1" in reconciliation_query

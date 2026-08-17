@@ -97,6 +97,33 @@ steps:
             "orchestrator",
         }, agents
 
+        status, _, body = request("/agentops/governance/summary")
+        governance = json.loads(body)
+        assert status == 200, body
+        for field in (
+            "total_runs",
+            "active_agents",
+            "completed",
+            "failed",
+            "runs_today",
+            "avg_duration_ms",
+        ):
+            assert field in governance, governance
+
+        status, _, body = request("/agentops/governance/runs?limit=5")
+        governed_runs = json.loads(body)
+        assert status == 200, body
+        assert isinstance(governed_runs.get("runs"), list), governed_runs
+
+        status, _, body = request("/openapi.json")
+        openapi = json.loads(body)
+        assert status == 200, body
+        artifact_download_path = (
+            "/silver-refinement/specs/{spec_id}/artifacts/current/"
+            "{artifact_type}/download"
+        )
+        assert artifact_download_path in openapi.get("paths", {}), openapi.get("paths", {})
+
         profile_request = {
             "project_id": "proyectopersonal-480420",
             "source_dataset": "seguros_bronce",

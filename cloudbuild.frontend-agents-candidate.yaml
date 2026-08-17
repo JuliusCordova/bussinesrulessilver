@@ -84,6 +84,12 @@ steps:
             "Generar deterministico",
             "Recomendar con Gemini ADK",
             "Guardar mapping aprobado",
+            "Ejecutar Quality Review",
+            "Descargar",
+            "Gobierno agéntico persistente",
+            "Persistencia BigQuery",
+            "Historial persistente de agentes",
+            "Alertas AgentOps",
         ):
             assert expected_text in bundle, f"Missing candidate UI capability: {expected_text}"
 

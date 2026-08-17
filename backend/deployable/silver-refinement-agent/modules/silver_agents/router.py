@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import Callable
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Response, status
 from google.adk.agents import BaseAgent
@@ -14,6 +16,7 @@ from .agents import (
     build_silver_orchestrator,
     build_table_profiler_agent,
 )
+from .governance_repository import AgentGovernanceRepository
 from .models import AgentDescriptor, AgentRunRequest, AgentRunResponse
 from .profile_report import ProfileReportService
 from .service import SilverAgentRunner
@@ -119,6 +122,16 @@ async def run_silver_agent(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Agente Silver no encontrado: {agent_name}",
         )
+    run_id = f"agent-run-{uuid.uuid4().hex}"
+    started_at = datetime.now(timezone.utc)
+    governance = AgentGovernanceRepository()
+    source_table = (
+        f"{request.project_id}.{request.source_dataset}.{request.source_table}"
+    )
+    target_table = (
+        f"{request.target_project_id or request.project_id}."
+        f"{request.target_dataset}.{request.target_table}"
+    )
     try:
         result = await SilverAgentRunner().run(factory(), request)
         if agent_name in {"table-profiler", "mapping-advisor", "quality-rule-advisor"}:
@@ -139,13 +152,70 @@ async def run_silver_agent(
                     json.dumps(profile, ensure_ascii=False),
                     json.dumps(request.business_keys, ensure_ascii=False),
                 )
+        finished_at = datetime.now(timezone.utc)
+        governance.save_run(
+            run_id=run_id,
+            agent_name=agent_name,
+            session_id=result.session_id,
+            status=result.status,
+            requested_by=request.requested_by,
+            source_table=source_table,
+            target_table=target_table,
+            event_count=result.events,
+            duration_ms=max(
+                int((finished_at - started_at).total_seconds() * 1000),
+                0,
+            ),
+            started_at=started_at,
+            finished_at=finished_at,
+            evidence=result.evidence,
+        )
         return result
     except ValueError as exc:
+        finished_at = datetime.now(timezone.utc)
+        governance.save_run(
+            run_id=run_id,
+            agent_name=agent_name,
+            session_id=None,
+            status="FAILED",
+            requested_by=request.requested_by,
+            source_table=source_table,
+            target_table=target_table,
+            event_count=0,
+            duration_ms=max(
+                int((finished_at - started_at).total_seconds() * 1000),
+                0,
+            ),
+            started_at=started_at,
+            finished_at=finished_at,
+            error_message=str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
     except Exception as exc:
+        finished_at = datetime.now(timezone.utc)
+        try:
+            governance.save_run(
+                run_id=run_id,
+                agent_name=agent_name,
+                session_id=None,
+                status="FAILED",
+                requested_by=request.requested_by,
+                source_table=source_table,
+                target_table=target_table,
+                event_count=0,
+                duration_ms=max(
+                    int((finished_at - started_at).total_seconds() * 1000),
+                    0,
+                ),
+                started_at=started_at,
+                finished_at=finished_at,
+                error_message=str(exc),
+            )
+        except Exception:
+            pass
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"No fue posible ejecutar {agent_name}: {exc}",

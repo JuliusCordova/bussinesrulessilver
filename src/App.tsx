@@ -2,13 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   demoWorkflowPatch,
   silverApi,
+  type AgentGovernanceRun,
+  type AgentGovernanceSummary,
+  type AgentOpsDashboard,
+  type AgentOpsHealth,
   type CatalogTableDetail,
+  type SilverAgentDescriptor,
   type SilverAgentRunRequest,
   type SilverWorkflowRecord,
 } from './api';
 import { businessRules, seedColumns, seedSource } from './seed';
 import { toBackendTransformation } from './transformations';
-import type { CatalogField, MappingRule, StepId, WorkflowState } from './types';
+import type { CatalogField, GeneratedArtifact, MappingRule, StepId, WorkflowState } from './types';
 
 const steps: Array<{ id: StepId; label: string; description: string }> = [
   { id: 'source', label: 'Origen y destino', description: 'Fuente Bronze y tabla Silver' },
@@ -17,6 +22,7 @@ const steps: Array<{ id: StepId; label: string; description: string }> = [
   { id: 'rules', label: 'Reglas', description: 'Reglas editables y aprobacion' },
   { id: 'artifacts', label: 'Artefactos', description: 'DDL, notebook y paquete' },
   { id: 'execution', label: 'Dataproc', description: 'Validacion y ejecucion' },
+  { id: 'governance', label: 'Gobierno', description: 'AgentOps, auditoria y salud' },
 ];
 
 const artifacts = [
@@ -354,7 +360,59 @@ function buildAgentRequest(workflow: WorkflowState): SilverAgentRunRequest {
     business_rules: toBackendQualityRules(workflow),
     approved_quality_rules: workflow.approvedQualityRules ?? [],
     context: 'MVP gobernado: toda recomendacion requiere aprobacion humana.',
+    requested_by: REQUESTED_BY,
   };
+}
+
+function buildArtifactContract(workflow: WorkflowState) {
+  const mapping = workflow.mappingRules?.length
+    ? workflow.mappingRules
+    : directMappingFromColumns(workflow.sourceColumns ?? []);
+  const columns = mapping
+    .filter((rule) => rule.include)
+    .map((rule) => ({
+      name: rule.targetColumn,
+      data_type: rule.targetType,
+      nullable:
+        rule.nullable &&
+        !(workflow.businessKeys ?? []).includes(rule.targetColumn),
+      source_column: rule.sourceColumn,
+      transformation: toBackendTransformation(rule.transformationType),
+      include: true,
+      confidence: rule.confidence,
+      recommendation_reason: rule.reason,
+      recommendation_risk: rule.risk,
+      requires_approval: rule.requiresApproval ?? false,
+    }));
+  const loadStrategy = workflow.loadStrategy === 'MERGE'
+    ? {
+        type: 'MERGE',
+        watermark_column: workflow.watermarkColumn ?? null,
+        initial_watermark: workflow.watermarkColumn ? seedSource.initialWatermark : null,
+        business_keys: workflow.businessKeys ?? [],
+      }
+    : { type: 'FULL', business_keys: [] };
+  const physicalDesign = {
+    partitioning: workflow.watermarkColumn
+      ? { enabled: true, column: workflow.watermarkColumn, granularity: 'DAY' }
+      : { enabled: false },
+    clustering_columns: (workflow.businessKeys ?? []).slice(0, 4),
+  };
+  const qualityRules = workflow.approvedQualityRules?.length
+    ? workflow.approvedQualityRules
+    : toBackendQualityRules(workflow);
+  return { columns, loadStrategy, physicalDesign, qualityRules };
+}
+
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function proposalToBackendRule(proposal: Record<string, unknown>) {
@@ -744,45 +802,10 @@ export function App() {
         {workflow.activeStep === 'artifacts' && (
           <ArtifactsStep
             workflow={workflow}
-            onNext={async () => {
-              await runAction('Guardando especificacion y generando paquete tecnico...', async () => {
+            onQualityReview={async () => {
+              await runAction('Ejecutando Quality Review gobernado...', async () => {
                 if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
-                const mapping = workflow.mappingRules?.length
-                  ? workflow.mappingRules
-                  : directMappingFromColumns(workflow.sourceColumns ?? []);
-                const columns = mapping
-                  .filter((rule) => rule.include)
-                  .map((rule) => ({
-                    name: rule.targetColumn,
-                    data_type: rule.targetType,
-                    nullable:
-                      rule.nullable &&
-                      !(workflow.businessKeys ?? []).includes(rule.targetColumn),
-                    source_column: rule.sourceColumn,
-                    transformation: toBackendTransformation(rule.transformationType),
-                    include: true,
-                    confidence: rule.confidence,
-                    recommendation_reason: rule.reason,
-                    recommendation_risk: rule.risk,
-                    requires_approval: rule.requiresApproval ?? false,
-                  }));
-                const loadStrategy = workflow.loadStrategy === 'MERGE'
-                  ? {
-                      type: 'MERGE',
-                      watermark_column: workflow.watermarkColumn ?? null,
-                      initial_watermark: workflow.watermarkColumn ? seedSource.initialWatermark : null,
-                      business_keys: workflow.businessKeys,
-                    }
-                  : { type: 'FULL', business_keys: [] };
-                const physicalDesign = {
-                  partitioning: workflow.watermarkColumn
-                    ? { enabled: true, column: workflow.watermarkColumn, granularity: 'DAY' }
-                    : { enabled: false },
-                  clustering_columns: (workflow.businessKeys ?? []).slice(0, 4),
-                };
-                const qualityRules = workflow.approvedQualityRules?.length
-                  ? workflow.approvedQualityRules
-                  : toBackendQualityRules(workflow);
+                const contract = buildArtifactContract(workflow);
                 const specified = await silverApi.saveSpecification(workflow.workflowId, {
                   expected_version: currentVersion(workflow),
                   mapping_version: workflow.mappingVersion ?? 1,
@@ -791,9 +814,9 @@ export function App() {
                     dataset_id: workflow.targetDataset ?? seedSource.targetDataset,
                     table_id: workflow.targetTable ?? seedSource.targetTable,
                   },
-                  columns,
+                  columns: contract.columns,
                   created_by: REQUESTED_BY,
-                  change_reason: 'Guardar especificacion Silver para generar artefactos.',
+                  change_reason: 'Guardar especificacion antes del Quality Review.',
                 });
                 const reviewed = await silverApi.reviewQuality(workflow.workflowId, {
                   expected_version: specified.version,
@@ -801,28 +824,56 @@ export function App() {
                   reviewed_by: REQUESTED_BY,
                   review_notes: workflow.approvedQualityRules?.length
                     ? 'Reglas recomendadas por agente y aprobadas por usuario.'
-                    : 'Fallback deterministico aprobado para MVP.',
-                  quality_rules: qualityRules,
+                    : 'Reglas deterministicas revisadas y aprobadas.',
+                  quality_rules: contract.qualityRules,
                 });
-                const specId = specified.spec_id;
-                if (!specId) throw new Error('El backend no devolvio spec_id para generar artefactos.');
-                const pkg = await silverApi.generateArtifacts(specId, {
-                  mapping_version: workflow.mappingVersion ?? reviewed.mapping_version ?? specified.mapping_version ?? 1,
+                setWorkflow((current) => ({
+                  ...current,
+                  ...workflowPatchFromRecord(reviewed),
+                  specId: specified.spec_id ?? reviewed.spec_id ?? current.specId,
+                  qualityReviewed: true,
+                  qualityReviewDecision: 'APPROVED',
+                  activeStep: 'artifacts',
+                  ...demoWorkflowPatch('Quality Review aprobado y persistido'),
+                  backendMessage: JSON.stringify(reviewed),
+                }));
+              });
+            }}
+            onDownload={async (artifact) => {
+              await runAction(`Descargando ${artifact.artifact_name}...`, async () => {
+                if (!workflow.specId) throw new Error('No existe spec_id para descargar.');
+                const blob = await silverApi.downloadArtifact(
+                  workflow.specId,
+                  artifact.artifact_type,
+                );
+                saveBlob(blob, artifact.artifact_name);
+              });
+            }}
+            onNext={async () => {
+              await runAction('Generando paquete tecnico gobernado...', async () => {
+                if (!workflow.workflowId) throw new Error('Primero crea el workflow.');
+                if (!workflow.qualityReviewed) {
+                  throw new Error('Ejecuta y aprueba Quality Review antes de generar el package.');
+                }
+                if (!workflow.specId) throw new Error('Quality Review no devolvio spec_id.');
+                const contract = buildArtifactContract(workflow);
+                const pkg = await silverApi.generateArtifacts(workflow.specId, {
+                  mapping_version: workflow.mappingVersion ?? 1,
                   target_project: workflow.projectId ?? seedSource.projectId,
                   target_dataset: workflow.targetDataset ?? seedSource.targetDataset,
                   target_table: workflow.targetTable ?? seedSource.targetTable,
-                  columns,
-                  load_strategy: loadStrategy,
-                  physical_design: physicalDesign,
+                  columns: contract.columns,
+                  load_strategy: contract.loadStrategy,
+                  physical_design: contract.physicalDesign,
                   specification: {
-                    load_strategy: loadStrategy,
-                    physical_design: physicalDesign,
+                    load_strategy: contract.loadStrategy,
+                    physical_design: contract.physicalDesign,
                   },
                   source_project: workflow.projectId ?? seedSource.projectId,
                   source_dataset: workflow.sourceDataset ?? seedSource.sourceDataset,
                   source_table: workflow.sourceTable ?? seedSource.sourceTable,
                   generated_by: REQUESTED_BY,
-                  quality_rules: qualityRules,
+                  quality_rules: contract.qualityRules,
                 });
                 const execution = await silverApi.createExecution({
                   spec_id: pkg.spec_id,
@@ -830,10 +881,10 @@ export function App() {
                 });
                 setWorkflow((current) => ({
                   ...current,
-                  ...workflowPatchFromRecord(reviewed),
-                  ...demoWorkflowPatch('Artefactos y execution creados en backend'),
+                  ...demoWorkflowPatch('Artefactos descargables y execution creados'),
                   specId: pkg.spec_id,
                   mappingVersion: pkg.mapping_version,
+                  generatedArtifacts: pkg.artifacts,
                   executionId: execution.execution_id,
                   executionStatus: 'PENDING',
                   activeStep: 'execution',
@@ -888,6 +939,9 @@ export function App() {
             }}
             validationResult={workflow.validationResult}
           />
+        )}
+        {workflow.activeStep === 'governance' && (
+          <GovernanceStep />
         )}
       </main>
 
@@ -1792,26 +1846,75 @@ function RulesStep({
   );
 }
 
-function ArtifactsStep({ workflow, onNext }: { workflow: WorkflowState; onNext: () => void }) {
+function ArtifactsStep({
+  workflow,
+  onQualityReview,
+  onDownload,
+  onNext,
+}: {
+  workflow: WorkflowState;
+  onQualityReview: () => void;
+  onDownload: (artifact: GeneratedArtifact) => void;
+  onNext: () => void;
+}) {
+  const generated = workflow.generatedArtifacts ?? [];
+  const displayArtifacts = generated.length
+    ? generated
+    : artifacts.map((artifactType) => ({
+        artifact_type: artifactType,
+        artifact_name: artifactType,
+        generation_status: 'PENDING',
+      }));
+
   return (
     <section className="card">
       <div className="sectionHeader">
-        <h2>Artefactos generados</h2>
-        <div className="actions"><button>Quality review</button><button className="primary" onClick={onNext}>Guardar spec y generar package</button></div>
+        <div>
+          <h2>Artefactos gobernados</h2>
+          <p>Quality Review es obligatorio antes de generar y descargar el package.</p>
+        </div>
+        <div className="actions">
+          <button
+            className={workflow.qualityReviewed ? 'approvedButton' : ''}
+            onClick={onQualityReview}
+          >
+            {workflow.qualityReviewed ? 'Quality Review aprobado' : 'Ejecutar Quality Review'}
+          </button>
+          <button
+            className="primary"
+            disabled={!workflow.qualityReviewed}
+            onClick={onNext}
+          >
+            Generar package
+          </button>
+        </div>
+      </div>
+      <div className="qualityGateSummary">
+        <strong>Gate de calidad: {workflow.qualityReviewDecision ?? 'PENDIENTE'}</strong>
+        <span>
+          {workflow.qualityReviewed
+            ? 'Revisión persistida en backend. La generación está habilitada.'
+            : 'Revisa y aprueba las reglas antes de crear artefactos.'}
+        </span>
       </div>
       <div className="artifactGrid">
-        {artifacts.map((artifact) => (
-          <article key={artifact}>
-            <strong>{artifact}</strong>
-            <span>{artifact === 'SILVER_DDL' ? 'DDL para crear tabla Silver' : 'Archivo tecnico versionable'}</span>
-            <em>READY</em>
+        {displayArtifacts.map((artifact) => (
+          <article key={artifact.artifact_id ?? artifact.artifact_type}>
+            <strong>{artifact.artifact_type}</strong>
+            <span>{artifact.artifact_name}</span>
+            <em>{artifact.generation_status ?? 'GENERATED'}</em>
+            {generated.length > 0 && (
+              <button onClick={() => onDownload(artifact)}>Descargar</button>
+            )}
           </article>
         ))}
       </div>
-      <pre>
-        CREATE TABLE IF NOT EXISTS {workflow.targetDataset ?? seedSource.targetDataset}.
-        {workflow.targetTable ?? seedSource.targetTable} (...)
-      </pre>
+      {generated.length > 0 && (
+        <p className="catalogStatus">
+          {generated.length} artefactos versionados disponibles. Incluye notebook,
+          PySpark, manifiesto, especificación, mapping y package ZIP.
+        </p>
+      )}
     </section>
   );
 }

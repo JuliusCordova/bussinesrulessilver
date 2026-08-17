@@ -4,14 +4,34 @@ set -euo pipefail
 PROJECT_ID="proyectopersonal-480420"
 REGION="us-central1"
 BACKEND_SERVICE="silver-refinement-agent"
+BACKEND_CANDIDATE_SERVICE="silver-refinement-agent-merge-test"
 FRONTEND_SERVICE="business-rules-silver-ui"
-BACKEND_IMAGE="us-central1-docker.pkg.dev/${PROJECT_ID}/dataops/silver-refinement-agent:agents-8.2.0-2760098b-aefa-4b12-b645-6dad72428a3a"
 BACKEND_URL="https://silver-refinement-agent-mkqutd4koq-uc.a.run.app"
 FRONTEND_URL="https://business-rules-silver-ui-mkqutd4koq-uc.a.run.app"
 STAMP="$(date -u +%Y%m%d%H%M%S)"
 GIT_SHA="$(git rev-parse --short HEAD)"
 FRONTEND_TAG="agents-prod-${GIT_SHA}-${STAMP}"
 FRONTEND_IMAGE="us-central1-docker.pkg.dev/${PROJECT_ID}/dataops/business-rules-silver-ui:${FRONTEND_TAG}"
+
+echo "=== RESOLVE EXACT VALIDATED BACKEND CANDIDATE ==="
+CANDIDATE_REVISION="$(gcloud run services describe "$BACKEND_CANDIDATE_SERVICE" \
+  --project="$PROJECT_ID" \
+  --region="$REGION" \
+  --format='value(status.latestReadyRevisionName)')"
+test -n "$CANDIDATE_REVISION"
+
+BACKEND_IMAGE="$(gcloud run revisions describe "$CANDIDATE_REVISION" \
+  --project="$PROJECT_ID" \
+  --region="$REGION" \
+  --format='value(status.imageDigest)')"
+test -n "$BACKEND_IMAGE"
+case "$BACKEND_IMAGE" in
+  *@sha256:*) ;;
+  *) echo "ERROR: candidate image is not pinned by digest: $BACKEND_IMAGE" >&2; exit 1 ;;
+esac
+
+echo "CANDIDATE_REVISION=$CANDIDATE_REVISION"
+echo "BACKEND_IMAGE=$BACKEND_IMAGE"
 
 prepare_service_yaml() {
   local service_name="$1"
@@ -120,7 +140,13 @@ curl -fsS -D /tmp/silver-cors.headers -o /tmp/silver-cors.body \
 grep -qi '^access-control-allow-origin: \*' /tmp/silver-cors.headers
 
 curl -fsS "$BACKEND_URL/silver-agents" | tee /tmp/silver-agents.json | jq -e \
-  'map(.name) | sort == ["business-rule-validator","notebook-generator","orchestrator","quality-rule-advisor","table-profiler"]'
+  'map(.name) | sort == ["business-rule-validator","mapping-advisor","notebook-generator","orchestrator","quality-rule-advisor","table-profiler"]'
+
+curl -fsS "$BACKEND_URL/agentops/governance/summary" | tee /tmp/silver-governance-summary.json | jq -e \
+  'has("total_runs") and has("active_agents") and has("completed") and has("failed")'
+
+curl -fsS "$BACKEND_URL/openapi.json" | jq -e \
+  '.paths | has("/silver-refinement/specs/{spec_id}/artifacts/current/{artifact_type}/download")'
 
 echo "=== BUILD FRONTEND FOR PROD BACKEND ==="
 gcloud builds submit . \
@@ -156,6 +182,14 @@ test -n "$ASSET_PATH"
 curl -fsS "${FRONTEND_URL}${ASSET_PATH}" > /tmp/business-rules-silver-prod.js
 
 grep -Fq "$BACKEND_URL" /tmp/business-rules-silver-prod.js
+for expected_text in \
+  "Ejecutar Quality Review" \
+  "Gobierno agéntico persistente" \
+  "Persistencia BigQuery" \
+  "Historial persistente de agentes"
+do
+  grep -Fq "$expected_text" /tmp/business-rules-silver-prod.js
+done
 if grep -Fq "silver-refinement-agent-merge-test" /tmp/business-rules-silver-prod.js; then
   echo "ERROR: el bundle productivo referencia el backend de prueba" >&2
   exit 1
@@ -164,6 +198,7 @@ fi
 curl -fsSI "$FRONTEND_URL" | sed -n '1,20p'
 
 echo "=== PRODUCTION PROMOTION CONFORME ==="
+echo "CANDIDATE_REVISION=$CANDIDATE_REVISION"
 echo "BACKEND_REVISION=$BACKEND_REVISION"
 echo "BACKEND_IMAGE=$BACKEND_IMAGE"
 echo "FRONTEND_REVISION=$FRONTEND_REVISION"

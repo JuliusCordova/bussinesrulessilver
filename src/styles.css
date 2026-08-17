@@ -911,3 +911,214 @@ button:disabled {
     grid-template-columns: 48px 160px 160px 120px 140px 72px;
   }
 }
+
+
+/* Agentic governance dashboard */
+.governanceBoard {
+  display: grid;
+  gap: 20px;
+}
+
+.persistenceBadge {
+  background: #e6f4ea;
+  border: 1px solid #9bd2ad;
+  border-radius: 999px;
+  color: #08783e;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 9px 12px;
+}
+
+.governanceMetrics {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.governanceMetrics article,
+.governanceSection {
+  background: #fff;
+  border: 1px solid #e2dcd2;
+  border-radius: 10px;
+}
+
+.governanceMetrics article {
+  padding: 16px;
+}
+
+.governanceMetrics span {
+  color: #65605c;
+  display: block;
+  font-size: 11px;
+}
+
+.governanceMetrics strong {
+  display: block;
+  font-size: 24px;
+  margin-top: 6px;
+}
+
+.governanceColumns {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.governanceSection {
+  min-width: 0;
+  padding: 18px;
+}
+
+.governanceSectionHeader {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.governanceSectionHeader h3 {
+  margin: 0;
+}
+
+.governanceSectionHeader > span,
+.healthOk,
+.healthWarn {
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 6px 10px;
+}
+
+.governanceSectionHeader > span,
+.healthOk {
+  background: #e6f4ea;
+  color: #08783e;
+}
+
+.healthWarn {
+  background: #fff1d6;
+  color: #8c5a00;
+}
+
+.agentRegistry {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.agentRegistry article,
+.healthList article,
+.compactList article {
+  background: #f7f6f4;
+  border: 1px solid #e2dcd2;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.agentRegistry span,
+.agentRegistry small,
+.healthList span,
+.compactList span {
+  color: #65605c;
+  display: block;
+  margin-top: 4px;
+}
+
+.healthList,
+.compactList {
+  display: grid;
+  gap: 8px;
+}
+
+.healthList article,
+.compactList article {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.governanceTableWrap {
+  overflow-x: auto;
+}
+
+.governanceTable {
+  border-collapse: collapse;
+  min-width: 1050px;
+  width: 100%;
+}
+
+.governanceTable th,
+.governanceTable td {
+  border-bottom: 1px solid #e2dcd2;
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.governanceTable th {
+  background: #202020;
+  color: #fff;
+  font-size: 11px;
+}
+
+.governanceTable td {
+  font-size: 12px;
+}
+
+.governanceTable td small {
+  color: #65605c;
+  display: block;
+  margin-top: 4px;
+}
+
+.runStatus {
+  background: #eeeae4;
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 5px 8px;
+}
+
+.runStatus.completed,
+.runStatus.succeeded {
+  background: #d8f2e3;
+  color: #08783e;
+}
+
+.runStatus.failed {
+  background: #ffd7d2;
+  color: #a32018;
+}
+
+.approvedButton,
+.qualityGateSummary {
+  background: #e6f4ea;
+  border-color: #86c99e;
+  color: #08783e;
+}
+
+.qualityGateSummary {
+  border: 1px solid #86c99e;
+  border-radius: 9px;
+  display: grid;
+  gap: 4px;
+  margin: 16px 0;
+  padding: 14px;
+}
+
+@media (max-width: 1200px) {
+  .governanceMetrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 800px) {
+  .governanceMetrics,
+  .governanceColumns,
+  .agentRegistry {
+    grid-template-columns: 1fr;
+  }
+}

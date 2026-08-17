@@ -1982,6 +1982,221 @@ function ExecutionStep({
 }
 
 
+
+function GovernanceStep() {
+  const [dashboard, setDashboard] = useState<AgentOpsDashboard | null>(null);
+  const [health, setHealth] = useState<AgentOpsHealth | null>(null);
+  const [summary, setSummary] = useState<AgentGovernanceSummary | null>(null);
+  const [runs, setRuns] = useState<AgentGovernanceRun[]>([]);
+  const [agents, setAgents] = useState<SilverAgentDescriptor[]>([]);
+  const [executions, setExecutions] = useState<Array<Record<string, unknown>>>([]);
+  const [alerts, setAlerts] = useState<Array<Record<string, unknown>>>([]);
+  const [unreadAlerts, setUnreadAlerts] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>();
+
+  async function refresh() {
+    setLoading(true);
+    setError(undefined);
+    try {
+      const [
+        dashboardResult,
+        healthResult,
+        summaryResult,
+        runsResult,
+        executionsResult,
+        alertsResult,
+        agentsResult,
+      ] = await Promise.all([
+        silverApi.getAgentOpsDashboard(),
+        silverApi.getAgentOpsHealth(),
+        silverApi.getAgentGovernanceSummary(),
+        silverApi.getAgentGovernanceRuns(50),
+        silverApi.getAgentOpsExecutions(25),
+        silverApi.getAgentOpsAlerts(25),
+        silverApi.listSilverAgents(),
+      ]);
+      setDashboard(dashboardResult);
+      setHealth(healthResult);
+      setSummary(summaryResult);
+      setRuns(runsResult.runs);
+      setExecutions(executionsResult.executions);
+      setAlerts(alertsResult.alerts);
+      setUnreadAlerts(alertsResult.unread);
+      setAgents(agentsResult);
+    } catch (requestError) {
+      setError(normalizeError(requestError).summary);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const executionText = (execution: Record<string, unknown>, key: string, fallback = 'N/A') => {
+    const value = execution[key];
+    return value == null || value === '' ? fallback : String(value);
+  };
+  const alertText = (alert: Record<string, unknown>, key: string, fallback = 'Sin detalle') => {
+    const value = alert[key];
+    return value == null || value === '' ? fallback : String(value);
+  };
+  const completionRate = summary?.total_runs
+    ? Math.round((summary.completed / summary.total_runs) * 100)
+    : 0;
+
+  return (
+    <section className="card governanceBoard">
+      <div className="sectionHeader">
+        <div>
+          <span className="resultEyebrow">Gemini ADK + AgentOps</span>
+          <h2>Gobierno agéntico persistente</h2>
+          <p>
+            Ejecuciones, evidencia, salud y alertas del ecosistema Silver. El historial de agentes
+            se conserva en BigQuery y no depende de la sesión del navegador.
+          </p>
+        </div>
+        <div className="actions">
+          <span className="persistenceBadge">Persistencia BigQuery</span>
+          <button onClick={() => void refresh()} disabled={loading}>
+            {loading ? 'Actualizando...' : 'Actualizar tablero'}
+          </button>
+        </div>
+      </div>
+
+      {error && <ErrorBox summary={error} />}
+      {loading && !dashboard && <ProcessingBox label="Consultando gobierno y AgentOps..." />}
+
+      <div className="governanceMetrics">
+        <article><span>Runs agénticos</span><strong>{summary?.total_runs ?? 0}</strong></article>
+        <article><span>Agentes activos</span><strong>{summary?.active_agents ?? agents.length}</strong></article>
+        <article><span>Completitud</span><strong>{completionRate}%</strong></article>
+        <article>
+          <span>Éxito ejecuciones</span>
+          <strong>{Math.round(dashboard?.summary.success_rate ?? 0)}%</strong>
+        </article>
+        <article><span>Artefactos</span><strong>{dashboard?.artifacts.total_artifacts ?? 0}</strong></article>
+        <article><span>Alertas sin leer</span><strong>{unreadAlerts}</strong></article>
+      </div>
+
+      <div className="governanceColumns">
+        <section className="governanceSection">
+          <div className="governanceSectionHeader">
+            <h3>Registro de agentes ADK</h3>
+            <span>{agents.length} registrados</span>
+          </div>
+          <div className="agentRegistry">
+            {agents.map((agent) => (
+              <article key={agent.name}>
+                <strong>{agent.name}</strong>
+                <span>{agent.purpose}</span>
+                <small>Modelo: {agent.model}</small>
+                <small>Tools: {agent.deterministic_tools.join(', ') || 'Ninguna'}</small>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="governanceSection">
+          <div className="governanceSectionHeader">
+            <h3>Salud de plataforma</h3>
+            <span className={health?.overall_status === 'HEALTHY' ? 'healthOk' : 'healthWarn'}>
+              {health?.overall_status ?? 'PENDIENTE'}
+            </span>
+          </div>
+          <div className="healthList">
+            {(health?.components ?? []).map((component) => (
+              <article key={component.component}>
+                <div>
+                  <strong>{component.component}</strong>
+                  <span>{component.detail}</span>
+                </div>
+                <small>{component.status} · {component.latency_ms} ms</small>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <section className="governanceSection">
+        <div className="governanceSectionHeader">
+          <h3>Historial persistente de agentes</h3>
+          <span>Últimos {runs.length}</span>
+        </div>
+        <div className="governanceTableWrap">
+          <table className="governanceTable">
+            <thead>
+              <tr>
+                <th>Agente</th><th>Estado</th><th>Origen</th><th>Destino</th>
+                <th>Solicitado por</th><th>Eventos</th><th>Duración</th><th>Finalizado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((run) => (
+                <tr key={run.run_id}>
+                  <td><strong>{run.agent_name}</strong><small>{run.run_id}</small></td>
+                  <td><span className={`runStatus ${run.status.toLowerCase()}`}>{run.status}</span></td>
+                  <td>{run.source_table ?? 'N/A'}</td>
+                  <td>{run.target_table ?? 'N/A'}</td>
+                  <td>{run.requested_by ?? 'N/A'}</td>
+                  <td>{run.event_count}</td>
+                  <td>{run.duration_ms} ms</td>
+                  <td>{new Date(run.finished_at).toLocaleString('es-PE')}</td>
+                </tr>
+              ))}
+              {!runs.length && !loading && (
+                <tr><td colSpan={8}>Aún no hay ejecuciones agénticas persistidas.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div className="governanceColumns">
+        <section className="governanceSection">
+          <div className="governanceSectionHeader">
+            <h3>Ejecuciones Silver recientes</h3>
+            <span>{executions.length} visibles</span>
+          </div>
+          <div className="compactList">
+            {executions.slice(0, 10).map((execution, index) => (
+              <article key={executionText(execution, 'execution_id', String(index))}>
+                <div>
+                  <strong>{executionText(execution, 'execution_id')}</strong>
+                  <span>{executionText(execution, 'spec_id')}</span>
+                </div>
+                <span className="runStatus">{executionText(execution, 'status')}</span>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="governanceSection">
+          <div className="governanceSectionHeader">
+            <h3>Alertas AgentOps</h3>
+            <span>{unreadAlerts} sin leer</span>
+          </div>
+          <div className="compactList">
+            {alerts.slice(0, 10).map((alert, index) => (
+              <article key={alertText(alert, 'alert_id', String(index))}>
+                <div>
+                  <strong>{alertText(alert, 'title', alertText(alert, 'type', 'Alerta'))}</strong>
+                  <span>{alertText(alert, 'message')}</span>
+                </div>
+                <span className="runStatus">{alertText(alert, 'severity', 'INFO')}</span>
+              </article>
+            ))}
+            {!alerts.length && !loading && <p>Sin alertas activas.</p>}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+
 function BigQueryResultPanel({ result }: { result: NonNullable<WorkflowState['validationResult']> }) {
   const metricSum = result.metric_sum == null
     ? 'No aplica'

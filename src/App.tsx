@@ -1861,6 +1861,7 @@ function ArtifactsStep({
   const displayArtifacts = generated.length
     ? generated
     : artifacts.map((artifactType) => ({
+        artifact_id: undefined,
         artifact_type: artifactType,
         artifact_name: artifactType,
         generation_status: 'PENDING',

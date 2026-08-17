@@ -1,4 +1,4 @@
-import type { CatalogField, WorkflowState } from './types';
+import type { CatalogField, GeneratedArtifact, WorkflowState } from './types';
 
 const DEFAULT_BASE_URL = 'https://silver-refinement-agent-mkqutd4koq-uc.a.run.app';
 
@@ -111,6 +111,14 @@ export const silverApi = {
       body: JSON.stringify(payload),
     }),
 
+  listArtifacts: (specId: string) =>
+    request<GeneratedArtifact[]>(`/silver-refinement/specs/${specId}/artifacts`),
+
+  downloadArtifact: (specId: string, artifactType: string) =>
+    requestBlob(
+      `/silver-refinement/specs/${specId}/artifacts/current/${artifactType}/download`,
+    ),
+
   createExecution: (payload: unknown) =>
     request<ExecutionRecord>('/executions', {
       method: 'POST',
@@ -151,6 +159,24 @@ export const silverApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  getAgentOpsDashboard: () =>
+    request<AgentOpsDashboard>('/agentops/dashboard'),
+
+  getAgentOpsHealth: () =>
+    request<AgentOpsHealth>('/agentops/health'),
+
+  getAgentGovernanceSummary: () =>
+    request<AgentGovernanceSummary>('/agentops/governance/summary'),
+
+  getAgentGovernanceRuns: (limit = 50) =>
+    request<AgentGovernanceRuns>(`/agentops/governance/runs?limit=${limit}`),
+
+  getAgentOpsExecutions: (limit = 25) =>
+    request<AgentOpsExecutions>(`/agentops/executions?limit=${limit}`),
+
+  getAgentOpsAlerts: (limit = 25) =>
+    request<AgentOpsAlerts>(`/agentops/alerts?limit=${limit}`),
 };
 
 export type SilverAgentName =
@@ -183,6 +209,7 @@ export interface SilverAgentRunRequest {
   business_rules?: Array<Record<string, unknown>>;
   approved_quality_rules?: Array<Record<string, unknown>>;
   context?: string | null;
+  requested_by?: string | null;
 }
 
 export interface SilverAgentRunResponse {
@@ -222,7 +249,7 @@ export interface MappingRecommendationResponse {
 export interface ArtifactPackageResponse {
   spec_id: string;
   mapping_version: number;
-  artifacts: Array<Record<string, unknown>>;
+  artifacts: GeneratedArtifact[];
 }
 
 export interface ExecutionRecord {
@@ -323,4 +350,90 @@ export interface CatalogBackendField {
 export function demoWorkflowPatch(action: string): Partial<WorkflowState> {
   const now = new Date().toISOString().slice(11, 19);
   return { lastAction: `${action} · ${now}`, error: undefined };
+}
+
+
+export interface AgentOpsDashboard {
+  generated_at: string;
+  summary: {
+    total_specs: number;
+    total_executions: number;
+    pending: number;
+    validated: number;
+    queued: number;
+    running: number;
+    succeeded: number;
+    failed: number;
+    cancelled: number;
+    success_rate: number;
+  };
+  today: {
+    executions: number;
+    rows_read: number;
+    rows_written: number;
+    avg_runtime_seconds: number;
+  };
+  artifacts: {
+    total_artifacts: number;
+    current_packages: number;
+    latest_package_version: number;
+  };
+  agents: Array<{ name: string; status: string; last_execution_at?: string | null }>;
+}
+
+export interface AgentOpsHealth {
+  checked_at: string;
+  overall_status: string;
+  healthy_components: number;
+  total_components: number;
+  components: Array<{
+    component: string;
+    status: string;
+    latency_ms: number;
+    detail: string;
+  }>;
+}
+
+export interface AgentGovernanceSummary {
+  total_runs: number;
+  active_agents: number;
+  completed: number;
+  failed: number;
+  runs_today: number;
+  avg_duration_ms: number;
+  last_run_at?: string | null;
+}
+
+export interface AgentGovernanceRun {
+  run_id: string;
+  agent_name: string;
+  session_id?: string | null;
+  status: string;
+  requested_by?: string | null;
+  source_table?: string | null;
+  target_table?: string | null;
+  event_count: number;
+  duration_ms: number;
+  started_at: string;
+  finished_at: string;
+  error_message?: string | null;
+}
+
+export interface AgentGovernanceRuns {
+  runs: AgentGovernanceRun[];
+  total: number;
+}
+
+export interface AgentOpsExecutions {
+  executions: Array<Record<string, unknown>>;
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AgentOpsAlerts {
+  generated_at: string;
+  total: number;
+  unread: number;
+  alerts: Array<Record<string, unknown>>;
 }

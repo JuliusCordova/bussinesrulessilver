@@ -1,4 +1,4 @@
-import type { BusinessRule, MappingRule, SeedColumn } from './types';
+import type { BusinessRule, SeedColumn } from './types';
 
 export const seedSource = {
   projectId: 'proyectopersonal-480420',
@@ -26,34 +26,6 @@ export const seedColumns: SeedColumn[] = [
   { name: 'bronze_archivo_origen', type: 'STRING', usage: 'traceability' },
   { name: 'bronze_hash_origen', type: 'STRING', usage: 'traceability' },
   { name: 'bronze_estado_registro', type: 'STRING', usage: 'rule' },
-];
-
-export const mappingRules: MappingRule[] = [
-  {
-    sourceColumn: 'producto_id',
-    targetColumn: 'producto_id',
-    targetType: 'STRING',
-    transformationType: 'DIRECT_COPY',
-  },
-  {
-    sourceColumn: 'prima_base',
-    targetColumn: 'prima_base',
-    targetType: 'NUMERIC',
-    transformationType: 'DIRECT_COPY',
-  },
-  {
-    sourceColumn: 'periodicidad',
-    targetColumn: 'prima_base_anualizada',
-    targetType: 'NUMERIC',
-    transformationType: 'DIRECT_COPY',
-    expression: "CASE WHEN periodicidad = 'MENSUAL' THEN prima_base * 12 ELSE prima_base END",
-  },
-  {
-    sourceColumn: 'bronze_*',
-    targetColumn: 'bronze_*',
-    targetType: 'STRING',
-    transformationType: 'TRACE_COPY',
-  },
 ];
 
 export const businessRules: BusinessRule[] = [

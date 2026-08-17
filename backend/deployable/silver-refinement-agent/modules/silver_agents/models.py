@@ -20,6 +20,7 @@ class AgentRunRequest(BaseModel):
     business_rules: list[dict[str, Any]] = Field(default_factory=list)
     approved_quality_rules: list[dict[str, Any]] = Field(default_factory=list)
     context: str | None = Field(default=None, max_length=8000)
+    requested_by: str | None = Field(default=None, max_length=320)
 
 
 class AgentRunResponse(BaseModel):

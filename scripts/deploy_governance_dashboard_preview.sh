@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_ID="${PROJECT_ID:-proyectopersonal-480420}"
+REGION="${REGION:-us-central1}"
+SERVICE="${SERVICE:-business-rules-silver-governance-preview}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PREVIEW_DIR="$ROOT_DIR/preview/governance-dashboard"
+EXPECTED_BACKEND_URL="${SILVER_API_URL:-https://silver-refinement-agent-mkqutd4koq-uc.a.run.app}"
+
+command -v gcloud >/dev/null
+command -v curl >/dev/null
+
+test -f "$PREVIEW_DIR/Dockerfile"
+test -f "$PREVIEW_DIR/index.html"
+test -f "$PREVIEW_DIR/app.js"
+test -f "$PREVIEW_DIR/styles.css"
+
+echo "=== Gobierno DataOps interactive preview ==="
+echo "Project: $PROJECT_ID"
+echo "Region : $REGION"
+echo "Service: $SERVICE"
+echo "Backend: $EXPECTED_BACKEND_URL"
+echo
+
+echo "[1/5] Validando frontend preview..."
+if command -v node >/dev/null 2>&1; then
+  node --check "$PREVIEW_DIR/app.js"
+fi
+grep -Fq 'detailDrawer' "$PREVIEW_DIR/index.html"
+grep -Fq 'data-kpi-detail="runs"' "$PREVIEW_DIR/index.html"
+grep -Fq 'openRunDetail' "$PREVIEW_DIR/app.js"
+grep -Fq 'openAgentDetail' "$PREVIEW_DIR/app.js"
+grep -Fq 'data-run-id' "$PREVIEW_DIR/app.js"
+echo "PASS: shell interactivo y drill-downs presentes"
+
+echo
+echo "[2/5] Validando backend canónico..."
+curl -fsS --retry 3 --retry-delay 1 "$EXPECTED_BACKEND_URL/health" >/tmp/governance-preview-backend-health.json
+grep -Fq '"status"' /tmp/governance-preview-backend-health.json
+curl -fsS --retry 3 --retry-delay 1 "$EXPECTED_BACKEND_URL/agentops/governance/summary" >/tmp/governance-preview-summary.json
+curl -fsS --retry 3 --retry-delay 1 "$EXPECTED_BACKEND_URL/agentops/governance/runs?limit=1" >/tmp/governance-preview-runs.json
+curl -fsS --retry 3 --retry-delay 1 "$EXPECTED_BACKEND_URL/agentops/health" >/tmp/governance-preview-health.json
+curl -fsS --retry 3 --retry-delay 1 "$EXPECTED_BACKEND_URL/silver-agents" >/tmp/governance-preview-agents.json
+echo "PASS: backend y contratos AgentOps accesibles"
+
+echo
+echo "[3/5] Desplegando preview aislado en Cloud Run..."
+gcloud run deploy "$SERVICE" \
+  --source "$PREVIEW_DIR" \
+  --project "$PROJECT_ID" \
+  --region "$REGION" \
+  --allow-unauthenticated \
+  --port 8080 \
+  --quiet
+
+PREVIEW_URL="$(gcloud run services describe "$SERVICE" \
+  --project "$PROJECT_ID" \
+  --region "$REGION" \
+  --format='value(status.url)')"
+
+test -n "$PREVIEW_URL"
+
+echo
+echo "[4/5] Smoke test del frontend desplegado..."
+PREVIEW_HTML=/tmp/governance-preview-index.html
+PREVIEW_JS=/tmp/governance-preview-app.js
+curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/" -o "$PREVIEW_HTML"
+curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/app.js" -o "$PREVIEW_JS"
+
+grep -Fq 'Gobierno DataOps — Business Rules Silver' "$PREVIEW_HTML"
+grep -Fq 'Preview interactivo' "$PREVIEW_HTML"
+grep -Fq '/agentops/governance/summary' "$PREVIEW_JS"
+grep -Fq '/silver-agents' "$PREVIEW_JS"
+grep -Fq 'openRunDetail' "$PREVIEW_JS"
+grep -Fq 'openAgentDetail' "$PREVIEW_JS"
+echo "PASS: preview interactivo servido y enlazado a contratos canónicos"
+
+echo
+echo "[5/5] Preview listo"
+echo "========================================================"
+echo "PREVIEW_URL=$PREVIEW_URL"
+echo "DIRECT_DASHBOARD_URL=$PREVIEW_URL/"
+echo "DEEP_LINK_FORMAT=$PREVIEW_URL/#run/<run_id>"
+echo "BACKEND_URL=$EXPECTED_BACKEND_URL"
+echo "========================================================"

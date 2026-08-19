@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Preview interactivo del dashboard de Gobierno DataOps para Business Rules Silver." />
+  <title>Gobierno DataOps — Business Rules Silver</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">BR</div>
+        <div><strong>Business Rules</strong><span>Silver</span></div>
+      </div>
+      <nav class="nav" aria-label="Navegación del preview">
+        <button class="nav-item active" type="button" data-scroll-target="#executive"><span>◫</span>Resumen ejecutivo</button>
+        <button class="nav-item" type="button" data-scroll-target="#agents"><span>◇</span>Agentes</button>
+        <button class="nav-item" type="button" data-scroll-target="#historyPanel"><span>↻</span>Ejecuciones</button>
+        <button class="nav-item" type="button" data-scroll-target="#health"><span>✓</span>Calidad & salud</button>
+        <button class="nav-item" type="button" data-kpi-detail="artifacts"><span>⌁</span>Artefactos</button>
+        <button class="nav-item" type="button" data-scroll-target="#alerts"><span>◉</span>Alertas</button>
+        <button class="nav-item" type="button" data-scroll-target="#architecture"><span>⌘</span>Gobierno</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="environment-card"><span>Ambiente</span><strong><i></i> Preview independiente</strong><small>Fuente: AgentOps productivo</small></div>
+        <div class="version-card"><span>Backend</span><strong id="backendVersion">Consultando...</strong><small id="backendHost">—</small></div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar" id="executive">
+        <div>
+          <div class="eyebrow">Gemini ADK + AgentOps · Persistencia BigQuery</div>
+          <h1>Gobierno DataOps — Business Rules Silver</h1>
+          <p>Observabilidad, trazabilidad y gobierno del refinamiento Bronze → Silver.</p>
+        </div>
+        <div class="top-actions">
+          <div class="environment-pill"><span></span> Preview interactivo</div>
+          <select id="periodSelect" aria-label="Periodo"><option value="7">Últimos 7 días</option><option value="14" selected>Últimos 14 días</option><option value="30">Últimos 30 días</option></select>
+          <button id="refreshButton" class="primary-button" type="button">Actualizar tablero</button>
+        </div>
+      </header>
+
+      <div id="errorBanner" class="error-banner hidden" role="alert"></div>
+
+      <section class="kpi-grid" aria-label="Indicadores ejecutivos">
+        <button class="kpi-card violet" type="button" data-kpi-detail="runs"><div class="kpi-icon">◎</div><div><span>Runs agénticos</span><strong id="kpiRuns">—</strong><small id="kpiRunsDelta">Historial persistente</small></div><em>Ver detalle →</em></button>
+        <button class="kpi-card blue" type="button" data-kpi-detail="agents"><div class="kpi-icon">◇</div><div><span>Agentes activos</span><strong id="kpiAgents">—</strong><small id="kpiAgentsDelta">Gemini ADK</small></div><em>Ver detalle →</em></button>
+        <button class="kpi-card green" type="button" data-kpi-detail="success"><div class="kpi-icon">✓</div><div><span>Tasa de éxito</span><strong id="kpiSuccess">—</strong><small id="kpiSuccessDelta">Ejecuciones Silver</small></div><em>Ver detalle →</em></button>
+        <button class="kpi-card purple" type="button" data-kpi-detail="performance"><div class="kpi-icon">◴</div><div><span>Duración p90</span><strong id="kpiP90">—</strong><small id="kpiAvgDuration">Promedio —</small></div><em>Ver detalle →</em></button>
+        <button class="kpi-card cyan" type="button" data-kpi-detail="artifacts"><div class="kpi-icon">▣</div><div><span>Artefactos</span><strong id="kpiArtifacts">—</strong><small id="kpiPackages">Packages vigentes —</small></div><em>Ver detalle →</em></button>
+        <button class="kpi-card amber" type="button" data-kpi-detail="alerts"><div class="kpi-icon">!</div><div><span>Alertas sin leer</span><strong id="kpiAlerts">—</strong><small id="kpiAlertsTotal">Total —</small></div><em>Ver detalle →</em></button>
+      </section>
+
+      <section class="dashboard-grid top-grid">
+        <article class="panel trend-panel"><div class="panel-header"><div><h2>Tendencia de ejecuciones</h2><p>Runs agénticos persistidos por día · clic para filtrar</p></div><span class="live-badge">● LIVE</span></div><div class="chart-wrap"><svg id="trendChart" class="trend-chart" viewBox="0 0 760 250" role="img" aria-label="Tendencia de ejecuciones"></svg></div><div id="trendLegend" class="chart-legend"></div></article>
+        <article class="panel top-agents-panel"><div class="panel-header"><div><h2>Top agentes</h2><p>Volumen y éxito · clic para explorar</p></div><span id="agentCountBadge" class="soft-badge">— agentes</span></div><div id="topAgents" class="top-agents"></div></article>
+        <article class="panel execution-state-panel"><div class="panel-header"><div><h2>Estado de ejecuciones</h2><p>Clic en un estado para filtrar</p></div></div><div class="donut-layout"><div id="statusDonut" class="donut"><div><strong id="donutTotal">—</strong><span>runs</span></div></div><div id="statusLegend" class="status-legend"></div></div></article>
+      </section>
+
+      <section class="dashboard-grid middle-grid">
+        <article class="panel history-panel" id="historyPanel">
+          <div class="panel-header"><div><h2>Historial persistente de agentes</h2><p>Selecciona una fila para abrir el detalle completo del run</p></div><div class="header-badges"><span id="historyCount" class="soft-badge">— visibles</span><span class="persistence-badge">BigQuery persistente</span></div></div>
+          <div id="filterBar" class="filter-bar"></div>
+          <div class="table-wrap"><table><thead><tr><th>Agente</th><th>Estado</th><th>Origen</th><th>Destino</th><th>Solicitado por</th><th>Eventos</th><th>Duración</th><th>Finalizado</th></tr></thead><tbody id="runsTable"></tbody></table></div>
+        </article>
+        <aside class="right-stack">
+          <article class="panel health-panel" id="health"><div class="panel-header compact"><div><h2>Estado de la plataforma</h2><p>Selecciona un componente para inspeccionarlo</p></div><span id="healthOverall" class="health-status">—</span></div><div id="healthList" class="health-list"></div></article>
+          <article class="panel alerts-panel" id="alerts"><div class="panel-header compact"><div><h2>Alertas AgentOps</h2><p>Clic para ver severidad y contrato registrado</p></div><span id="alertsBadge" class="soft-badge">—</span></div><div id="alertsList" class="alerts-list"></div></article>
+        </aside>
+      </section>
+
+      <section class="dashboard-grid lower-grid" id="agents">
+        <article class="panel agents-registry-panel"><div class="panel-header"><div><h2>Registro de agentes ADK</h2><p>Selecciona un agente para ver modelo, tools, desempeño y runs</p></div><span id="registryBadge" class="soft-badge">— registrados</span></div><div id="agentRegistry" class="agent-registry"></div></article>
+        <article class="panel executions-panel"><div class="panel-header compact"><div><h2>Ejecuciones Silver recientes</h2><p>Abre el contrato observado de cada ejecución</p></div><span id="executionBadge" class="soft-badge">—</span></div><div id="executionsList" class="compact-list"></div></article>
+      </section>
+
+      <section class="panel architecture-panel" id="architecture">
+        <div class="panel-header compact"><div><h2>Arquitectura & componentes</h2><p>Cadena de valor del producto DataOps Silver</p></div><span class="soft-badge">Google Cloud</span></div>
+        <div class="architecture-flow">
+          <div class="architecture-node"><b>UI</b><strong>Business Rules Silver</strong><span>React / Vite</span></div><div class="arrow">→</div>
+          <div class="architecture-node"><b>API</b><strong>Silver Refinement</strong><span>Cloud Run / FastAPI</span></div><div class="arrow">→</div>
+          <div class="architecture-node"><b>AI</b><strong>Gemini ADK</strong><span>6 agentes</span></div><div class="arrow">→</div>
+          <div class="architecture-node"><b>DQ</b><strong>Rules & Quality</strong><span>Quality Review</span></div><div class="arrow">→</div>
+          <div class="architecture-node"><b>BQ</b><strong>AgentOps</strong><span>BigQuery persistente</span></div><div class="arrow">→</div>
+          <div class="architecture-node"><b>PKG</b><strong>Artefactos</strong><span>DDL · PySpark · ZIP</span></div>
+        </div>
+      </section>
+
+      <footer class="footer"><span id="lastUpdated">Actualizando...</span><span>Preview interactivo aislado · no modifica el frontend productivo</span></footer>
+    </main>
+  </div>
+
+  <div id="drawerBackdrop" class="drawer-backdrop"></div>
+  <aside id="detailDrawer" class="detail-drawer" aria-label="Detalle interactivo" aria-hidden="true">
+    <header class="drawer-header">
+      <div><span id="drawerEyebrow">Detalle</span><h2 id="drawerTitle">Detalle</h2></div>
+      <button id="drawerClose" type="button" aria-label="Cerrar detalle">×</button>
+    </header>
+    <div id="drawerBody" class="drawer-body"></div>
+  </aside>
+
+  <script src="./app.js"></script>
+</body>
+</html>

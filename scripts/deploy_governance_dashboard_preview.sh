@@ -36,11 +36,12 @@ echo "PASS: shell interactivo y drill-downs presentes"
 
 echo
 echo "[2/5] Validando backend canónico..."
-curl -fsS "$EXPECTED_BACKEND_URL/health" | grep -q '"status"'
-curl -fsS "$EXPECTED_BACKEND_URL/agentops/governance/summary" >/tmp/governance-preview-summary.json
-curl -fsS "$EXPECTED_BACKEND_URL/agentops/governance/runs?limit=1" >/tmp/governance-preview-runs.json
-curl -fsS "$EXPECTED_BACKEND_URL/agentops/health" >/tmp/governance-preview-health.json
-curl -fsS "$EXPECTED_BACKEND_URL/silver-agents" >/tmp/governance-preview-agents.json
+curl -fsS --retry 3 --retry-delay 1 "$EXPECTED_BACKEND_URL/health" >/tmp/governance-preview-backend-health.json
+grep -Fq '"status"' /tmp/governance-preview-backend-health.json
+curl -fsS --retry 3 --retry-delay 1 "$EXPECTED_BACKEND_URL/agentops/governance/summary" >/tmp/governance-preview-summary.json
+curl -fsS --retry 3 --retry-delay 1 "$EXPECTED_BACKEND_URL/agentops/governance/runs?limit=1" >/tmp/governance-preview-runs.json
+curl -fsS --retry 3 --retry-delay 1 "$EXPECTED_BACKEND_URL/agentops/health" >/tmp/governance-preview-health.json
+curl -fsS --retry 3 --retry-delay 1 "$EXPECTED_BACKEND_URL/silver-agents" >/tmp/governance-preview-agents.json
 echo "PASS: backend y contratos AgentOps accesibles"
 
 echo
@@ -62,12 +63,17 @@ test -n "$PREVIEW_URL"
 
 echo
 echo "[4/5] Smoke test del frontend desplegado..."
-curl -fsS "$PREVIEW_URL" | grep -Fq 'Gobierno DataOps — Business Rules Silver'
-curl -fsS "$PREVIEW_URL" | grep -Fq 'Preview interactivo'
-curl -fsS "$PREVIEW_URL/app.js" | grep -Fq '/agentops/governance/summary'
-curl -fsS "$PREVIEW_URL/app.js" | grep -Fq '/silver-agents'
-curl -fsS "$PREVIEW_URL/app.js" | grep -Fq 'openRunDetail'
-curl -fsS "$PREVIEW_URL/app.js" | grep -Fq 'openAgentDetail'
+PREVIEW_HTML=/tmp/governance-preview-index.html
+PREVIEW_JS=/tmp/governance-preview-app.js
+curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/" -o "$PREVIEW_HTML"
+curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/app.js" -o "$PREVIEW_JS"
+
+grep -Fq 'Gobierno DataOps — Business Rules Silver' "$PREVIEW_HTML"
+grep -Fq 'Preview interactivo' "$PREVIEW_HTML"
+grep -Fq '/agentops/governance/summary' "$PREVIEW_JS"
+grep -Fq '/silver-agents' "$PREVIEW_JS"
+grep -Fq 'openRunDetail' "$PREVIEW_JS"
+grep -Fq 'openAgentDetail' "$PREVIEW_JS"
 echo "PASS: preview interactivo servido y enlazado a contratos canónicos"
 
 echo

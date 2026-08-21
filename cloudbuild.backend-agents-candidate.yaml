@@ -105,12 +105,8 @@ steps:
         governance = json.loads(body)
         assert status == 200, body
         for field in (
-            "total_runs",
-            "active_agents",
-            "completed",
-            "failed",
-            "runs_today",
-            "avg_duration_ms",
+            "total_runs", "active_agents", "completed", "failed",
+            "runs_today", "avg_duration_ms",
         ):
             assert field in governance, governance
 
@@ -132,6 +128,7 @@ steps:
             "/agentops/finops/daily",
             "/agentops/finops/agents",
             "/agentops/finops/runs",
+            "/agentops/finops/services",
         ):
             assert finops_path in openapi.get("paths", {}), finops_path
 
@@ -143,10 +140,7 @@ steps:
             "target_dataset": "seguros_silver",
             "target_table": "pagos_primas",
             "columns": [],
-            "load_strategy": {
-                "type": "FULL",
-                "business_keys": [],
-            },
+            "load_strategy": {"type": "FULL", "business_keys": []},
             "physical_design": {},
             "business_keys": [],
             "watermark_column": "bronze_fecha_ingesta",
@@ -180,11 +174,7 @@ steps:
 
         mapping_request = dict(profile_request)
         mapping_request["columns"] = [
-            {
-                "name": item["name"],
-                "type": item["type"],
-                "mode": item.get("mode", "NULLABLE"),
-            }
+            {"name": item["name"], "type": item["type"], "mode": item.get("mode", "NULLABLE")}
             for item in profile["columns"]
         ]
         mapping_errors = []
@@ -201,27 +191,17 @@ steps:
                 mapping_errors.append(f"attempt={attempt} status={status} body={body}")
             except urllib.error.HTTPError as exc:
                 error_body = exc.read().decode(errors="replace")
-                mapping_errors.append(
-                    f"attempt={attempt} status={exc.code} body={error_body}"
-                )
+                mapping_errors.append(f"attempt={attempt} status={exc.code} body={error_body}")
             if attempt < 3:
                 time.sleep(5 * attempt)
         else:
-            raise AssertionError({
-                "message": "Mapping advisor failed after three attempts",
-                "errors": mapping_errors,
-            })
+            raise AssertionError({"message": "Mapping advisor failed after three attempts", "errors": mapping_errors})
 
         mapping_result = json.loads(body)
         assert status == 200, {"body": body, "errors": mapping_errors}
         mapping_evidence = mapping_result.get("evidence") or {}
-        mapped_sources = {
-            item["source_column"] for item in mapping_evidence.get("columns", [])
-        }
-        assert mapped_sources == column_names, {
-            "expected": sorted(column_names),
-            "actual": sorted(mapped_sources),
-        }
+        mapped_sources = {item["source_column"] for item in mapping_evidence.get("columns", [])}
+        assert mapped_sources == column_names, {"expected": sorted(column_names), "actual": sorted(mapped_sources)}
         assert "producto_id" not in mapped_sources
 
         report_req = urllib.request.Request(
@@ -240,30 +220,52 @@ steps:
         status, _, body = request("/agentops/finops/summary?days=30")
         finops_summary = json.loads(body)
         assert status == 200, body
-        assert finops_summary["billing_cost_available"] is False, finops_summary
-        assert finops_summary["cost_usd"] is None, finops_summary
         assert int(finops_summary["llm_calls"]) > 0, finops_summary
         assert int(finops_summary["total_tokens"]) > 0, finops_summary
+        billing_available = finops_summary["billing_cost_available"] is True
+        if billing_available:
+            assert finops_summary["cost_usd"] is not None, finops_summary
+            assert finops_summary["cost_semantics"] == "FACTURADO", finops_summary
+            assert finops_summary["cost_source"] == "CLOUD_BILLING_DETAILED_USAGE_EXPORT", finops_summary
+        else:
+            assert finops_summary["cost_usd"] is None, finops_summary
+            assert finops_summary["cost_semantics"] == "NO_DISPONIBLE", finops_summary
+            assert finops_summary["cost_source"] == "CLOUD_BILLING_EXPORT_PENDING", finops_summary
 
         status, _, body = request("/agentops/finops/daily?days=30")
         finops_daily = json.loads(body)
         assert status == 200, body
-        assert finops_daily["billing_cost_available"] is False, finops_daily
         assert isinstance(finops_daily["series"], list) and finops_daily["series"], finops_daily
+        assert "cost_usd" not in finops_daily, finops_daily
 
         status, _, body = request("/agentops/finops/agents?days=30")
         finops_agents = json.loads(body)
         assert status == 200, body
-        assert finops_agents["billing_cost_available"] is False, finops_agents
+        assert finops_agents["cost_semantics"] == "ATRIBUCION_PENDIENTE", finops_agents
+        assert finops_agents["cost_usd"] is None, finops_agents
         observed_agents = {item["agent_name"] for item in finops_agents["agents"]}
         assert {"table-profiler", "mapping-advisor"}.issubset(observed_agents), finops_agents
 
         status, _, body = request("/agentops/finops/runs?days=30&limit=20")
         finops_runs = json.loads(body)
         assert status == 200, body
-        assert finops_runs["billing_cost_available"] is False, finops_runs
+        assert finops_runs["cost_semantics"] == "ATRIBUCION_PENDIENTE", finops_runs
+        assert finops_runs["cost_usd"] is None, finops_runs
         assert isinstance(finops_runs["runs"], list) and finops_runs["runs"], finops_runs
         assert all(item.get("run_id") for item in finops_runs["runs"]), finops_runs
+
+        status, _, body = request("/agentops/finops/services?days=30")
+        finops_services = json.loads(body)
+        assert status == 200, body
+        assert finops_services["billing_cost_available"] is billing_available, finops_services
+        if billing_available:
+            assert finops_services["cost_semantics"] == "FACTURADO", finops_services
+            assert finops_services["cost_usd"] is not None, finops_services
+            assert finops_services["billing_table"], finops_services
+        else:
+            assert finops_services["cost_semantics"] == "NO_DISPONIBLE", finops_services
+            assert finops_services["cost_usd"] is None, finops_services
+            assert finops_services["services"] == [], finops_services
 
         print(json.dumps({
             "health": health,
@@ -278,7 +280,9 @@ steps:
             "finops_llm_calls": finops_summary["llm_calls"],
             "finops_total_tokens": finops_summary["total_tokens"],
             "finops_agents": sorted(observed_agents),
-            "billing_cost_available": finops_summary["billing_cost_available"],
+            "billing_cost_available": billing_available,
+            "billing_cost_usd": finops_summary["cost_usd"],
+            "billing_cost_semantics": finops_summary["cost_semantics"],
         }, ensure_ascii=False))
 
 images:

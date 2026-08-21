@@ -21,6 +21,9 @@
     return status || 'Estado no informado';
   };
 
+  let refreshTimer = null;
+  let observing = false;
+
   async function getProduct(days) {
     const response = await fetch(`${API_BASE}/agentops/finops/product-attribution?days=${days}`, { headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
@@ -39,17 +42,19 @@
       if (runs) finops.insertBefore(panel, runs);
       else finops.appendChild(panel);
     }
-    panel.innerHTML = `
-      <div class="panel-header compact"><div><h3>Costo por producto · Business Rules Silver</h3><p>Atribución gobernada con Billing real + evidencia AgentOps. Sin estimaciones sintéticas.</p></div><span id="finopsProductState" class="soft-badge">Consultando…</span></div>
-      <div id="finopsProductAttributionBody" class="product-attribution-shell"><div class="finops-empty">Consultando atribución real del producto…</div></div>`;
+    if (!$('finopsProductState') || !$('finopsProductAttributionBody')) {
+      panel.innerHTML = `
+        <div class="panel-header compact"><div><h3>Costo por producto · Business Rules Silver</h3><p>Atribución gobernada con Billing real + evidencia AgentOps. Sin estimaciones sintéticas.</p></div><span id="finopsProductState" class="soft-badge">Consultando…</span></div>
+        <div id="finopsProductAttributionBody" class="product-attribution-shell"><div class="finops-empty">Consultando atribución real del producto…</div></div>`;
+    }
     return panel;
   }
 
   function render(payload) {
-    ensurePanel();
+    const panel = ensurePanel();
     const body = $('finopsProductAttributionBody');
     const stateBadge = $('finopsProductState');
-    if (!body || !stateBadge) return;
+    if (!panel || !body || !stateBadge) return;
 
     const productCost = money(payload?.product_cost_usd);
     const directCost = money(payload?.direct_cost_usd);
@@ -62,7 +67,7 @@
 
     stateBadge.textContent = statusText;
     stateBadge.className = `soft-badge ${waiting ? 'pending' : ''}`;
-
+    body.className = 'product-attribution-shell';
     body.innerHTML = `
       <div class="product-attribution-kpis">
         <div class="product-cost-card ${payload?.product_cost_usd == null ? 'pending' : ''}"><span>Costo producto</span><strong id="finopsProductCostValue">${productCost}</strong><small>${payload?.product_cost_usd == null ? 'Atribución pendiente' : 'Costo atribuido Silver'}</small></div>
@@ -98,10 +103,28 @@
     }
   }
 
+  function scheduleRefresh(delay = 50) {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(refresh, delay);
+  }
+
+  function watchLegacyRender() {
+    if (observing) return;
+    const panel = ensurePanel();
+    if (!panel) return;
+    observing = true;
+    const observer = new MutationObserver(() => {
+      const body = $('finopsProductAttributionBody');
+      if (body?.querySelector('.finops-semantics')) scheduleRefresh(30);
+    });
+    observer.observe(panel, { childList: true, subtree: true });
+  }
+
   window.addEventListener('DOMContentLoaded', () => {
     ensurePanel();
-    refresh();
-    $('periodSelect')?.addEventListener('change', refresh);
-    $('refreshButton')?.addEventListener('click', () => setTimeout(refresh, 120));
+    watchLegacyRender();
+    scheduleRefresh(250);
+    $('periodSelect')?.addEventListener('change', () => scheduleRefresh(250));
+    $('refreshButton')?.addEventListener('click', () => scheduleRefresh(350));
   });
 })();

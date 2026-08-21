@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from google.adk.agents.callback_context import CallbackContext
@@ -85,6 +86,7 @@ def build_finops_callbacks(*, canonical_agent_name: str, model_name: str):
 
         state = callback_context.state
         row = {
+            "call_ts": datetime.now(timezone.utc).isoformat(),
             "trace_id": state.get("finops_trace_id") or callback_context.invocation_id,
             "session_id": callback_context.session.id,
             "agent_name": canonical_agent_name,

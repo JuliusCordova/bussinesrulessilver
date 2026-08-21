@@ -21,20 +21,26 @@ class FakeFinOpsRepository:
 
     def fetch_billing_services(self, *, days: int):
         return {
+            "billing_source_available": True,
             "billing_cost_available": True,
+            "billing_data_in_period": True,
             "period_days": days,
             "services": [
                 {
                     "service": "Vertex AI",
-                    "gross_cost_usd": 1.25,
-                    "credits_usd": -0.10,
-                    "cost_usd": 1.15,
-                    "currency": "USD",
+                    "gross_cost_billing_currency": 3.705204,
+                    "credits_billing_currency": 0.0,
+                    "net_cost_billing_currency": 3.705204,
+                    "gross_cost_usd": 1.085774,
+                    "credits_usd": 0.0,
+                    "cost_usd": 1.085774,
+                    "billing_currency": "PEN",
                 }
             ],
             "total": 1,
-            "cost_usd": 1.15,
-            "currency": "USD",
+            "cost_usd": 1.085774,
+            "billing_currency": "PEN",
+            "net_cost_billing_currency": 3.705204,
             "cost_semantics": "FACTURADO",
             "cost_source": "CLOUD_BILLING_DETAILED_USAGE_EXPORT",
         }
@@ -72,10 +78,14 @@ def test_finops_runs_preserves_governance_trace_id_without_fake_usd() -> None:
     assert result["cost_usd"] is None
 
 
-def test_finops_services_exposes_only_factured_cloud_billing_cost() -> None:
+def test_finops_services_preserves_billing_currency_and_normalized_usd() -> None:
     result = get_finops_services(days=30, repository=FakeFinOpsRepository())
+    assert result["billing_source_available"] is True
     assert result["billing_cost_available"] is True
+    assert result["billing_data_in_period"] is True
     assert result["cost_semantics"] == "FACTURADO"
     assert result["services"][0]["service"] == "Vertex AI"
-    assert result["services"][0]["cost_usd"] == 1.15
-    assert result["currency"] == "USD"
+    assert result["services"][0]["billing_currency"] == "PEN"
+    assert result["services"][0]["net_cost_billing_currency"] == 3.705204
+    assert result["services"][0]["cost_usd"] == 1.085774
+    assert result["billing_currency"] == "PEN"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from types import SimpleNamespace
 
 from modules.silver_agents.agents import (
@@ -9,7 +10,7 @@ from modules.silver_agents.agents import (
     build_quality_rule_advisor_agent,
     build_table_profiler_agent,
 )
-from modules.silver_agents.finops_telemetry import _usage_value
+from modules.silver_agents.finops_telemetry import _call_timestamp, _usage_value
 from modules.silver_agents.models import AgentRunRequest
 from modules.silver_agents.service import SilverAgentRunner
 
@@ -56,3 +57,10 @@ def test_usage_metadata_reads_real_token_fields() -> None:
     assert _usage_value(usage, "prompt_token_count") == 101
     assert _usage_value(usage, "candidates_token_count") == 23
     assert _usage_value(usage, "total_token_count") == 150
+
+
+def test_finops_call_timestamp_is_utc_and_non_null() -> None:
+    value = _call_timestamp()
+    parsed = datetime.fromisoformat(value)
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset() is not None

@@ -39,6 +39,10 @@ def _usage_value(usage: Any, field: str) -> int:
         return 0
 
 
+def _call_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def build_finops_callbacks(*, canonical_agent_name: str, model_name: str):
     """Return ADK callbacks that persist real LLM usage into AgentOps.
 
@@ -86,7 +90,7 @@ def build_finops_callbacks(*, canonical_agent_name: str, model_name: str):
 
         state = callback_context.state
         row = {
-            "call_ts": datetime.now(timezone.utc).isoformat(),
+            "call_ts": _call_timestamp(),
             "trace_id": state.get("finops_trace_id") or callback_context.invocation_id,
             "session_id": callback_context.session.id,
             "agent_name": canonical_agent_name,

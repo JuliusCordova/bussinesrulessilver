@@ -68,11 +68,13 @@ curl -fsS --retry 3 --retry-delay 1 "$FINOPS_API_URL/agentops/finops/services?da
 python3 - <<'PY'
 import json
 from pathlib import Path
+
 s = json.loads(Path('/tmp/governance-preview-finops-summary.json').read_text())
 d = json.loads(Path('/tmp/governance-preview-finops-daily.json').read_text())
 a = json.loads(Path('/tmp/governance-preview-finops-agents.json').read_text())
 r = json.loads(Path('/tmp/governance-preview-finops-runs.json').read_text())
 v = json.loads(Path('/tmp/governance-preview-finops-services.json').read_text())
+
 assert int(s.get('llm_calls') or 0) > 0, s
 assert int(s.get('total_tokens') or 0) > 0, s
 assert isinstance(d.get('series'), list) and d['series'], d
@@ -82,20 +84,43 @@ assert a.get('cost_usd') is None, a
 assert isinstance(r.get('runs'), list) and r['runs'], r
 assert r.get('cost_semantics') == 'ATRIBUCION_PENDIENTE', r
 assert r.get('cost_usd') is None, r
-billing = s.get('billing_cost_available') is True
-assert v.get('billing_cost_available') is billing, (s, v)
-if billing:
+
+billing_source = s.get('billing_source_available') is True
+billing_cost = s.get('billing_cost_available') is True
+assert v.get('billing_source_available') is billing_source, (s, v)
+assert v.get('billing_cost_available') is billing_cost, (s, v)
+
+if billing_cost:
+    assert billing_source, s
+    assert s.get('billing_data_in_period') is True, s
     assert s.get('cost_usd') is not None, s
     assert s.get('cost_semantics') == 'FACTURADO', s
+    assert s.get('billing_currency'), s
     assert v.get('cost_semantics') == 'FACTURADO', v
     assert v.get('cost_usd') is not None, v
-    print(f"PASS: FinOps real + Billing real disponible ({s.get('currency') or 'USD'} {s.get('cost_usd')})")
-else:
+    print(
+        'PASS: FinOps real + Billing real con cobertura del periodo '
+        f"({s.get('billing_currency')} / USD normalizado {s.get('cost_usd')})"
+    )
+elif billing_source:
+    assert s.get('billing_data_in_period') is False, s
     assert s.get('cost_usd') is None, s
     assert s.get('cost_semantics') == 'NO_DISPONIBLE', s
-    assert v.get('cost_semantics') == 'NO_DISPONIBLE', v
+    assert s.get('cost_source') == 'CLOUD_BILLING_EXPORT_NOT_YET_COVERING_PERIOD', s
+    assert s.get('billing_table'), s
     assert v.get('services') == [], v
-    print('PASS: FinOps real disponible; Billing aún pendiente sin USD sintéticos')
+    print(
+        'PASS: FinOps real; Billing materializado, cobertura reciente aún en backfill '
+        f"(último uso observado: {s.get('last_usage_at')})"
+    )
+else:
+    assert s.get('billing_data_in_period') is False, s
+    assert s.get('cost_usd') is None, s
+    assert s.get('cost_semantics') == 'NO_DISPONIBLE', s
+    assert s.get('cost_source') == 'CLOUD_BILLING_EXPORT_PENDING', s
+    assert s.get('billing_table') is None, s
+    assert v.get('services') == [], v
+    print('PASS: FinOps real; tabla Cloud Billing aún no materializada, sin USD sintéticos')
 PY
 
 echo

@@ -223,14 +223,25 @@ steps:
         assert int(finops_summary["llm_calls"]) > 0, finops_summary
         assert int(finops_summary["total_tokens"]) > 0, finops_summary
         billing_available = finops_summary["billing_cost_available"] is True
+        billing_source_available = finops_summary.get("billing_source_available") is True
         if billing_available:
+            assert billing_source_available, finops_summary
+            assert finops_summary["billing_data_in_period"] is True, finops_summary
             assert finops_summary["cost_usd"] is not None, finops_summary
             assert finops_summary["cost_semantics"] == "FACTURADO", finops_summary
             assert finops_summary["cost_source"] == "CLOUD_BILLING_DETAILED_USAGE_EXPORT", finops_summary
+            assert finops_summary.get("billing_currency"), finops_summary
         else:
             assert finops_summary["cost_usd"] is None, finops_summary
             assert finops_summary["cost_semantics"] == "NO_DISPONIBLE", finops_summary
-            assert finops_summary["cost_source"] == "CLOUD_BILLING_EXPORT_PENDING", finops_summary
+            assert finops_summary["cost_source"] in {
+                "CLOUD_BILLING_EXPORT_PENDING",
+                "CLOUD_BILLING_EXPORT_NOT_YET_COVERING_PERIOD",
+            }, finops_summary
+            if billing_source_available:
+                assert finops_summary["billing_table"], finops_summary
+                assert finops_summary["billing_data_in_period"] is False, finops_summary
+                assert finops_summary["last_usage_at"] is not None, finops_summary
 
         status, _, body = request("/agentops/finops/daily?days=30")
         finops_daily = json.loads(body)
@@ -258,10 +269,12 @@ steps:
         finops_services = json.loads(body)
         assert status == 200, body
         assert finops_services["billing_cost_available"] is billing_available, finops_services
+        assert finops_services.get("billing_source_available") is billing_source_available, finops_services
         if billing_available:
             assert finops_services["cost_semantics"] == "FACTURADO", finops_services
             assert finops_services["cost_usd"] is not None, finops_services
             assert finops_services["billing_table"], finops_services
+            assert finops_services.get("billing_currency"), finops_services
         else:
             assert finops_services["cost_semantics"] == "NO_DISPONIBLE", finops_services
             assert finops_services["cost_usd"] is None, finops_services
@@ -280,9 +293,13 @@ steps:
             "finops_llm_calls": finops_summary["llm_calls"],
             "finops_total_tokens": finops_summary["total_tokens"],
             "finops_agents": sorted(observed_agents),
+            "billing_source_available": billing_source_available,
             "billing_cost_available": billing_available,
             "billing_cost_usd": finops_summary["cost_usd"],
+            "billing_currency": finops_summary.get("billing_currency"),
             "billing_cost_semantics": finops_summary["cost_semantics"],
+            "billing_cost_source": finops_summary["cost_source"],
+            "billing_last_usage_at": str(finops_summary.get("last_usage_at")),
         }, ensure_ascii=False))
 
 images:

@@ -44,9 +44,18 @@ class SilverProductAttributionRepository:
             return None
         return f"{self.project_id}.{self.billing_dataset}.{matches[0]}" if matches else None
 
-    def _query(self, sql: str, *, location: str, parameters: list[bigquery.ScalarQueryParameter] | None = None) -> list[dict[str, Any]]:
+    def _query(
+        self,
+        sql: str,
+        *,
+        location: str,
+        parameters: list[bigquery.ScalarQueryParameter] | None = None,
+    ) -> list[dict[str, Any]]:
         config = bigquery.QueryJobConfig(query_parameters=parameters or [])
-        return [dict(row.items()) for row in self.client.query(sql, job_config=config, location=location).result()]
+        return [
+            dict(row.items())
+            for row in self.client.query(sql, job_config=config, location=location).result()
+        ]
 
     def fetch_product_attribution(self, *, days: int = 30) -> dict[str, Any]:
         table_id = self._billing_table_id()
@@ -121,7 +130,6 @@ class SilverProductAttributionRepository:
         billing_first = coverage.get("first_usage_at")
         billing_last = coverage.get("last_usage_at")
         silver_first = telemetry.get("first_call_at")
-        silver_last = telemetry.get("last_call_at")
         overlap = bool(billing_last and silver_first and billing_last >= silver_first)
 
         result = {
@@ -147,8 +155,27 @@ class SilverProductAttributionRepository:
           resource.name AS resource_name,
           resource.global_name AS resource_global_name,
           ANY_VALUE(currency) AS billing_currency,
-          COALESCE(SUM(cost), 0) AS net_cost_billing_currency,
-          COALESCE(SUM(SAFE_DIVIDE(cost, NULLIF(currency_conversion_rate, 0))), 0) AS cost_usd,
+          COALESCE(SUM(cost), 0) AS gross_cost_billing_currency,
+          COALESCE(
+            SUM((SELECT COALESCE(SUM(c.amount), 0) FROM UNNEST(credits) AS c)),
+            0
+          ) AS credits_billing_currency,
+          COALESCE(SUM(cost), 0)
+            + COALESCE(
+                SUM((SELECT COALESCE(SUM(c.amount), 0) FROM UNNEST(credits) AS c)),
+                0
+              ) AS net_cost_billing_currency,
+          COALESCE(SUM(SAFE_DIVIDE(cost, NULLIF(currency_conversion_rate, 0))), 0)
+            + COALESCE(
+                SUM((
+                  SELECT COALESCE(
+                    SUM(SAFE_DIVIDE(c.amount, NULLIF(currency_conversion_rate, 0))),
+                    0
+                  )
+                  FROM UNNEST(credits) AS c
+                )),
+                0
+              ) AS cost_usd,
           MIN(usage_start_time) AS first_usage_at,
           MAX(usage_start_time) AS last_usage_at
         FROM `{table_id}`

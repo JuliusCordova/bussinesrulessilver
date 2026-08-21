@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { App } from './App';
 import { silverApi, type SilverWorkflowRecord } from './api';
+import { hydrateWorkflowForResume } from './workflowResume';
+import type { WorkflowState } from './types';
 import './processes.css';
 
 type ProductMode = 'processes' | 'wizard';
@@ -41,6 +43,7 @@ export function ProductRoot() {
   const [mode, setMode] = useState<ProductMode>('processes');
   const [workflows, setWorkflows] = useState<SilverWorkflowRecord[]>([]);
   const [selected, setSelected] = useState<SilverWorkflowRecord | null>(null);
+  const [resumeWorkflow, setResumeWorkflow] = useState<WorkflowState>();
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -85,13 +88,33 @@ export function ProductRoot() {
 
   const statuses = Array.from(new Set(workflows.map((workflow) => workflow.status)));
 
+  async function openProcess(workflowId: string) {
+    setLoading(true);
+    setError(undefined);
+    try {
+      const latest = await silverApi.getWorkflow(workflowId);
+      setSelected(latest);
+      setResumeWorkflow(hydrateWorkflowForResume(latest));
+      setMode('wizard');
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : String(openError));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function startNewProcess() {
+    setResumeWorkflow(undefined);
+    setMode('wizard');
+  }
+
   if (mode === 'wizard') {
     return (
       <div className="productRootWizard">
         <button className="backToProcesses" onClick={() => setMode('processes')}>
           ← Volver a Procesos Silver
         </button>
-        <App />
+        <App initialWorkflow={resumeWorkflow} />
       </div>
     );
   }
@@ -111,7 +134,7 @@ export function ProductRoot() {
           <button onClick={() => void loadProcesses()} disabled={loading}>
             {loading ? 'Actualizando…' : 'Actualizar'}
           </button>
-          <button className="primaryProcessAction" onClick={() => setMode('wizard')}>
+          <button className="primaryProcessAction" onClick={startNewProcess}>
             + Nuevo proceso Silver
           </button>
         </div>
@@ -193,8 +216,15 @@ export function ProductRoot() {
                 <div><dt>Actualizado</dt><dd>{formatDate(selected.updated_at)}</dd></div>
               </dl>
               <div className="processDetailNotice">
-                La reapertura editable se habilitará en el siguiente incremento. Este corte muestra únicamente evidencia real persistida.
+                El proceso se reabrirá usando la versión más reciente persistida en backend.
               </div>
+              <button
+                className="primaryProcessAction"
+                disabled={loading}
+                onClick={() => void openProcess(selected.workflow_id)}
+              >
+                {loading ? 'Abriendo…' : 'Abrir proceso'}
+              </button>
             </>
           ) : (
             <div className="processDetailEmpty">

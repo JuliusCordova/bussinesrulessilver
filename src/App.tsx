@@ -433,11 +433,13 @@ function proposalToBackendRule(proposal: Record<string, unknown>) {
   };
 }
 
-export function App() {
-  const [workflow, setWorkflow] = useState<WorkflowState>({
-    status: 'DRAFT',
-    activeStep: 'source',
-  });
+export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
+  const [workflow, setWorkflow] = useState<WorkflowState>(() =>
+    initialWorkflow ?? {
+      status: 'DRAFT',
+      activeStep: 'source',
+    },
+  );
   const [showDataprocConfirm, setShowDataprocConfirm] = useState(false);
 
   const activeIndex = stepOrder.indexOf(workflow.activeStep);

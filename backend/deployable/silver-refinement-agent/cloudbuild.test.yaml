@@ -6,7 +6,10 @@ steps:
       - |
         python -m pip install --no-cache-dir -r requirements-test.txt
         python -m compileall -q modules tests
-        python -m pytest -q           tests/test_silver_agents.py           tests/test_result_validator.py
+        python -m pytest -q \
+          tests/test_silver_agents.py \
+          tests/test_result_validator.py \
+          tests/test_finops_telemetry.py
 options:
   logging: CLOUD_LOGGING_ONLY
 timeout: 1200s

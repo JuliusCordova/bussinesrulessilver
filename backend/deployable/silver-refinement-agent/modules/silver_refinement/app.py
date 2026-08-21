@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from modules.agentops.finops_router import router as finops_router
 from modules.agentops.router import router as agentops_router
 from modules.governance.audit_router import router as audit_router
 from modules.governance.promotion_router import router as promotion_router
@@ -38,6 +39,7 @@ app.include_router(silver_workflow_router)
 app.include_router(execution_router)
 app.include_router(silver_agents_router)
 app.include_router(agentops_router)
+app.include_router(finops_router)
 app.include_router(governance_router)
 app.include_router(promotion_router)
 app.include_router(rollback_router)

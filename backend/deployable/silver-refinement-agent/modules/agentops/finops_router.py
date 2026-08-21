@@ -36,8 +36,6 @@ def get_finops_daily(
         return {
             "period_days": days,
             "series": rows,
-            "billing_cost_available": False,
-            "cost_usd": None,
         }
     except Exception as exc:
         raise HTTPException(
@@ -57,7 +55,7 @@ def get_finops_agents(
             "period_days": days,
             "agents": rows,
             "total": len(rows),
-            "billing_cost_available": False,
+            "cost_semantics": "ATRIBUCION_PENDIENTE",
             "cost_usd": None,
         }
     except Exception as exc:
@@ -79,11 +77,26 @@ def get_finops_runs(
             "period_days": days,
             "runs": rows,
             "total": len(rows),
-            "billing_cost_available": False,
+            "cost_semantics": "ATRIBUCION_PENDIENTE",
             "cost_usd": None,
         }
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"No fue posible obtener consumo FinOps por run: {exc}",
+        ) from exc
+
+
+@router.get("/services")
+def get_finops_services(
+    days: int = Query(default=30, ge=1, le=365),
+    repository: SilverFinOpsRepository = Depends(get_finops_repository),
+) -> dict:
+    """Return real billed cost by Google Cloud service when Billing Export exists."""
+    try:
+        return repository.fetch_billing_services(days=days)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No fue posible obtener costos facturados por servicio: {exc}",
         ) from exc

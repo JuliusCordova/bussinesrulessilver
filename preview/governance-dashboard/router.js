@@ -44,33 +44,81 @@
     return el;
   }
 
+  function writeText(targetId, value, fallback='—') {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const next = value || fallback;
+    if (target.textContent !== next) target.textContent = next;
+  }
+
   function sync(sourceId,targetId,fallback='—') {
-    const t=document.getElementById(targetId); if(t) t.textContent=document.getElementById(sourceId)?.textContent?.trim()||fallback;
+    const value = document.getElementById(sourceId)?.textContent?.trim();
+    writeText(targetId, value, fallback);
   }
 
   function syncOverview() {
-    sync('finopsTokens','overviewFinopsTokens'); sync('finopsRunsCount','overviewFinopsRuns'); sync('kpiAgents','overviewAgentCount'); sync('kpiRuns','overviewRuns'); sync('kpiAlerts','overviewAlerts');
-    const cost=document.getElementById('finopsProductCostValue')||document.getElementById('finopsCost');
-    const costTarget=document.getElementById('overviewFinopsCost'); if(costTarget) costTarget.textContent=cost?.textContent?.trim()||'No disponible';
-    const state=(document.getElementById('finopsProductState')||document.getElementById('finopsStatus'))?.textContent?.trim()||'Consultando cobertura real…';
-    const stateTarget=document.getElementById('overviewFinopsState'); if(stateTarget){stateTarget.textContent=state; const live=/disponible|facturado|atribuido/i.test(state)&&!/pendiente|no disponible|sin overlap/i.test(state); stateTarget.classList.toggle('live',live); stateTarget.classList.toggle('pending',!live);}
+    sync('finopsTokens','overviewFinopsTokens');
+    sync('finopsRunsCount','overviewFinopsRuns');
+    sync('kpiAgents','overviewAgentCount');
+    sync('kpiRuns','overviewRuns');
+    sync('kpiAlerts','overviewAlerts');
+
+    const cost = document.getElementById('finopsProductCostValue') || document.getElementById('finopsCost');
+    writeText('overviewFinopsCost', cost?.textContent?.trim(), 'No disponible');
+
+    const state = (document.getElementById('finopsProductState') || document.getElementById('finopsStatus'))?.textContent?.trim() || 'Consultando cobertura real…';
+    const stateTarget = document.getElementById('overviewFinopsState');
+    if (stateTarget) {
+      if (stateTarget.textContent !== state) stateTarget.textContent = state;
+      const live = /disponible|facturado|atribuido/i.test(state) && !/pendiente|no disponible|sin overlap/i.test(state);
+      stateTarget.classList.toggle('live', live);
+      stateTarget.classList.toggle('pending', !live);
+    }
+  }
+
+  function scheduleSyncs() {
+    [150, 600, 1500, 3000].forEach((delay) => setTimeout(syncOverview, delay));
   }
 
   function mount() {
-    const main=$('.main-content'); const error=document.getElementById('errorBanner'); if(!main||!error) throw new Error('main-content/errorBanner no encontrados');
+    const main=$('.main-content');
+    const error=document.getElementById('errorBanner');
+    if(!main||!error) throw new Error('main-content/errorBanner no encontrados');
     if(document.getElementById('viewHost')) return;
 
-    const host=document.createElement('div'); host.id='viewHost'; host.className='view-host'; error.insertAdjacentElement('afterend',host);
-    const views={}; Object.keys(META).forEach(n=>{views[n]=page(n);host.appendChild(views[n]);});
+    const host=document.createElement('div');
+    host.id='viewHost';
+    host.className='view-host';
+    error.insertAdjacentElement('afterend',host);
+    const views={};
+    Object.keys(META).forEach(n=>{views[n]=page(n);host.appendChild(views[n]);});
 
-    const kpis=$('.kpi-grid'); const top=$('.top-grid'); const status=$('.execution-state-panel');
+    const kpis=$('.kpi-grid');
+    const top=$('.top-grid');
+    const status=$('.execution-state-panel');
     if(kpis) views.overview.appendChild(kpis);
-    const content=document.createElement('div'); content.className='overview-content-grid';
-    const mainCol=document.createElement('div'); mainCol.className='overview-main-column'; if(top) mainCol.appendChild(top); content.appendChild(mainCol);
-    const rail=executiveRail(); if(status) rail.prepend(status); content.appendChild(rail); views.overview.appendChild(content);
-    const shortcuts=document.createElement('div'); shortcuts.className='overview-quick-grid'; shortcuts.innerHTML=quick('finops','↗','FinOps IA','Consumo real, costo y atribución gobernada.')+quick('agents','◇','Agentes','Catálogo ADK, tools y desempeño observable.')+quick('runs','↻','Ejecuciones','Historial, estados y trazabilidad por run.'); views.overview.appendChild(shortcuts);
+    const content=document.createElement('div');
+    content.className='overview-content-grid';
+    const mainCol=document.createElement('div');
+    mainCol.className='overview-main-column';
+    if(top) mainCol.appendChild(top);
+    content.appendChild(mainCol);
+    const rail=executiveRail();
+    if(status) rail.prepend(status);
+    content.appendChild(rail);
+    views.overview.appendChild(content);
+    const shortcuts=document.createElement('div');
+    shortcuts.className='overview-quick-grid';
+    shortcuts.innerHTML=quick('finops','↗','FinOps IA','Consumo real, costo y atribución gobernada.')+quick('agents','◇','Agentes','Catálogo ADK, tools y desempeño observable.')+quick('runs','↻','Ejecuciones','Historial, estados y trazabilidad por run.');
+    views.overview.appendChild(shortcuts);
 
-    const finops=document.getElementById('finops'); if(finops){const nav=document.createElement('nav');nav.className='finops-subnav';nav.innerHTML='<button type="button" data-finops-anchor="finops">Resumen</button><button type="button" data-finops-anchor="finopsServiceCosts">Costos por servicio</button><button type="button" data-finops-anchor="finopsProductAttribution">Costo por producto</button><button type="button" data-finops-anchor="finopsRuns">Runs con consumo</button>';views.finops.append(nav,finops);}
+    const finops=document.getElementById('finops');
+    if(finops){
+      const nav=document.createElement('nav');
+      nav.className='finops-subnav';
+      nav.innerHTML='<button type="button" data-finops-anchor="finops">Resumen</button><button type="button" data-finops-anchor="finopsServiceCosts">Costos por servicio</button><button type="button" data-finops-anchor="finopsProductAttribution">Costo por producto</button><button type="button" data-finops-anchor="finopsRuns">Runs con consumo</button>';
+      views.finops.append(nav,finops);
+    }
 
     const agentPanel=$('.agents-registry-panel'); if(agentPanel) views.agents.appendChild(agentPanel);
     const history=document.getElementById('historyPanel'); if(history) views.runs.appendChild(history);
@@ -88,28 +136,49 @@
     $$('.governance-view').forEach(v=>{v.hidden=v.dataset.view!==name;});
     document.body.dataset.currentView=name;
     $$('[data-view-target]').forEach(n=>n.classList.toggle('active',n.dataset.viewTarget===name));
-    const [title,subtitle,eyebrow]=META[name]; const top=$('.topbar'); if(top){const h=$('h1',top),p=$('p',top),e=$('.eyebrow',top);if(h)h.textContent=title;if(p)p.textContent=subtitle;if(e)e.textContent=eyebrow;}
+    const [title,subtitle,eyebrow]=META[name];
+    const top=$('.topbar');
+    if(top){
+      const h=$('h1',top),p=$('p',top),e=$('.eyebrow',top);
+      if(h)h.textContent=title;
+      if(p)p.textContent=subtitle;
+      if(e)e.textContent=eyebrow;
+    }
     if(updateHash&&location.hash!==`#view/${name}`) history.replaceState(null,'',`#view/${name}`);
-    window.scrollTo(0,0); syncOverview();
+    window.scrollTo(0,0);
+    syncOverview();
   }
 
-  function hashView(){const m=location.hash.match(/^#view\/([a-z-]+)/);return m&&META[m[1]]?m[1]:null;}
+  function hashView(){
+    const m=location.hash.match(/^#view\/([a-z-]+)/);
+    return m&&META[m[1]]?m[1]:null;
+  }
 
   function init(){
     try{
       mount();
       document.addEventListener('click',e=>{
-        const nav=e.target.closest('[data-view-target]'); if(nav){e.preventDefault();e.stopPropagation();show(nav.dataset.viewTarget);return;}
-        const link=e.target.closest('[data-view-link]'); if(link){e.preventDefault();e.stopPropagation();show(link.dataset.viewLink);return;}
-        const anchor=e.target.closest('[data-finops-anchor]'); if(anchor){document.getElementById(anchor.dataset.finopsAnchor)?.scrollIntoView({behavior:'smooth',block:'start'});}
+        const nav=e.target.closest('[data-view-target]');
+        if(nav){e.preventDefault();e.stopPropagation();show(nav.dataset.viewTarget);return;}
+        const link=e.target.closest('[data-view-link]');
+        if(link){e.preventDefault();e.stopPropagation();show(link.dataset.viewLink);return;}
+        const anchor=e.target.closest('[data-finops-anchor]');
+        if(anchor){document.getElementById(anchor.dataset.finopsAnchor)?.scrollIntoView({behavior:'smooth',block:'start'});}
       },true);
-      const obs=new MutationObserver(syncOverview); obs.observe($('.main-content')||document.body,{subtree:true,childList:true,characterData:true});
-      show(hashView()||'overview',!hashView()); setTimeout(syncOverview,300);
+
+      show(hashView()||'overview',!hashView());
+      scheduleSyncs();
+      document.getElementById('refreshButton')?.addEventListener('click', scheduleSyncs);
+      document.getElementById('periodSelect')?.addEventListener('change', scheduleSyncs);
+      window.addEventListener('load', scheduleSyncs, { once: true });
       document.body.classList.add('spa-ready');
-    }catch(error){console.error('Governance SPA init failed',error);document.body.classList.add('spa-error');}
+    }catch(error){
+      console.error('Governance SPA init failed',error);
+      document.body.classList.add('spa-error');
+    }
   }
 
-  window.governanceRouter={navigate:n=>show(n),current:()=>document.body.dataset.currentView||'overview'};
+  window.governanceRouter={navigate:n=>show(n),current:()=>document.body.dataset.currentView||'overview',sync:syncOverview};
   window.addEventListener('hashchange',()=>{const v=hashView();if(v)show(v,false);});
   window.addEventListener('DOMContentLoaded',init);
 })();

@@ -6,6 +6,7 @@
   <meta name="description" content="Preview interactivo del dashboard de Gobierno DataOps para Business Rules Silver." />
   <title>Gobierno DataOps — Business Rules Silver</title>
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./finops.css" />
 </head>
 <body>
   <div class="app-shell">
@@ -16,6 +17,7 @@
       </div>
       <nav class="nav" aria-label="Navegación del preview">
         <button class="nav-item active" type="button" data-scroll-target="#executive"><span>◫</span>Resumen ejecutivo</button>
+        <button class="nav-item" type="button" data-scroll-target="#finops"><span>◉</span>FinOps IA</button>
         <button class="nav-item" type="button" data-scroll-target="#agents"><span>◇</span>Agentes</button>
         <button class="nav-item" type="button" data-scroll-target="#historyPanel"><span>↻</span>Ejecuciones</button>
         <button class="nav-item" type="button" data-scroll-target="#health"><span>✓</span>Calidad & salud</button>
@@ -58,6 +60,23 @@
         <article class="panel trend-panel"><div class="panel-header"><div><h2>Tendencia de ejecuciones</h2><p>Runs agénticos persistidos por día · clic para filtrar</p></div><span class="live-badge">● LIVE</span></div><div class="chart-wrap"><svg id="trendChart" class="trend-chart" viewBox="0 0 760 250" role="img" aria-label="Tendencia de ejecuciones"></svg></div><div id="trendLegend" class="chart-legend"></div></article>
         <article class="panel top-agents-panel"><div class="panel-header"><div><h2>Top agentes</h2><p>Volumen y éxito · clic para explorar</p></div><span id="agentCountBadge" class="soft-badge">— agentes</span></div><div id="topAgents" class="top-agents"></div></article>
         <article class="panel execution-state-panel"><div class="panel-header"><div><h2>Estado de ejecuciones</h2><p>Clic en un estado para filtrar</p></div></div><div class="donut-layout"><div id="statusDonut" class="donut"><div><strong id="donutTotal">—</strong><span>runs</span></div></div><div id="statusLegend" class="status-legend"></div></div></article>
+      </section>
+
+      <section class="finops-section" id="finops" aria-label="FinOps IA real">
+        <div class="finops-head"><div><h2>FinOps IA · consumo real</h2><p>Telemetría Gemini ADK de Business Rules Silver, correlacionada por run gobernado.<span id="finopsPeriodLabel" class="finops-period">Últimos 14 días</span></p></div><span id="finopsStatus" class="finops-source-badge">Consultando…</span></div>
+        <div class="finops-kpis">
+          <article class="finops-kpi"><span>Llamadas LLM</span><strong id="finopsCalls">—</strong><small>Solo agentes Silver instrumentados</small></article>
+          <article class="finops-kpi"><span>Tokens totales</span><strong id="finopsTokens">—</strong><small>Prompt + respuesta + metadata del modelo</small></article>
+          <article class="finops-kpi"><span>Runs gobernados</span><strong id="finopsRunsCount">—</strong><small>Correlación por trace/run ID</small></article>
+          <article class="finops-kpi"><span>Latencia promedio</span><strong id="finopsLatency">—</strong><small>Tiempo real observado por llamada</small></article>
+          <article class="finops-kpi cost"><span>Costo facturado</span><strong id="finopsCost">No disponible</strong><small id="finopsCostMeta">Cloud Billing Export no configurado</small></article>
+        </div>
+        <div class="finops-grid">
+          <article class="finops-panel"><h3>Evolución temporal de tokens</h3><p>Consumo real agregado por día. Registros históricos sin timestamp se excluyen del gráfico.</p><svg id="finopsTokenTrend" class="finops-chart" viewBox="0 0 760 230" role="img" aria-label="Tendencia de tokens Silver"></svg></article>
+          <article class="finops-panel"><h3>Consumo por agente</h3><p>Tokens, llamadas y latencia observada.</p><div id="finopsAgentBars" class="finops-agent-bars"></div></article>
+        </div>
+        <article class="finops-panel"><h3>Runs con consumo IA</h3><p>Drill-down técnico por run gobernado.</p><div id="finopsRuns" class="finops-runs"></div></article>
+        <div class="finops-note"><i>ⓘ</i><div><strong>Semántica de costo:</strong> esta vista muestra consumo IA real. Los USD permanecerán como “No disponible” hasta validar Cloud Billing Export. No se calculan ni muestran costos sintéticos.</div></div>
       </section>
 
       <section class="dashboard-grid middle-grid">
@@ -103,5 +122,6 @@
   </aside>
 
   <script src="./app.js"></script>
+  <script src="./finops.js"></script>
 </body>
 </html>

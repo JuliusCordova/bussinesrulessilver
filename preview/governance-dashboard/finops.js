@@ -38,6 +38,19 @@
     return response.json();
   }
 
+  function ensureProductAttributionPanel() {
+    if ($('finopsProductAttribution')) return;
+    const section = $('finops');
+    if (!section) return;
+    const runsPanel = $('finopsRuns')?.closest('.finops-panel');
+    const panel = document.createElement('article');
+    panel.id = 'finopsProductAttribution';
+    panel.className = 'finops-panel';
+    panel.innerHTML = '<h3>Costo por producto · Business Rules Silver</h3><p>Atribución gobernada: costo directo por recurso + costo IA solo cuando Billing y AgentOps cubren el mismo periodo.</p><div id="finopsProductAttributionBody" class="finops-empty">Consultando atribución del producto…</div>';
+    if (runsPanel) section.insertBefore(panel, runsPanel);
+    else section.appendChild(panel);
+  }
+
   function renderDaily(series) {
     const svg = $('finopsTokenTrend');
     if (!svg) return;
@@ -93,6 +106,36 @@
     }).join('');
   }
 
+  function renderProductAttribution(payload) {
+    ensureProductAttributionPanel();
+    const root = $('finopsProductAttributionBody');
+    if (!root) return;
+    if (!payload) {
+      root.innerHTML = '<strong>Atribución no disponible</strong><span>No fue posible consultar el contrato por producto.</span>';
+      return;
+    }
+    const productCost = payload.product_cost_usd == null ? 'No disponible' : money(payload.product_cost_usd, 'USD');
+    const directCost = payload.direct_cost_usd == null ? 'No disponible' : money(payload.direct_cost_usd, 'USD');
+    const aiCost = payload.attributed_ai_cost_usd == null ? 'No disponible' : money(payload.attributed_ai_cost_usd, 'USD');
+    const coverage = payload.attribution_coverage_pct == null ? 'Pendiente' : `${Number(payload.attribution_coverage_pct).toFixed(1)}%`;
+    const lastBilling = payload.billing_last_usage_at ? dateTimeLabel(payload.billing_last_usage_at) : 'sin cobertura';
+    const state = payload.status === 'WAITING_TEMPORAL_OVERLAP'
+      ? 'Atribución pendiente por cobertura temporal'
+      : payload.status === 'DIRECT_ATTRIBUTION_AVAILABLE'
+        ? 'Atribución directa parcial disponible'
+        : payload.status || 'Estado no informado';
+    root.className = '';
+    root.innerHTML = `<div class="finops-semantics">
+      <div><b>PRODUCTO</b><span>${esc(payload.product || 'BUSINESS_RULES_SILVER')} · ${esc(state)}</span></div>
+      <div><b>COSTO PRODUCTO</b><span>${productCost} · ${esc(payload.attribution_semantics || 'SIN ATRIBUCIÓN')}</span></div>
+      <div><b>DIRECTO</b><span>${directCost} · recursos identificables con evidencia HIGH</span></div>
+      <div><b>IA ATRIBUIDA</b><span>${aiCost} · requiere Billing y AgentOps en el mismo periodo</span></div>
+      <div><b>COBERTURA</b><span>${coverage} · confianza ${esc(payload.confidence || 'PENDING')}</span></div>
+      <div><b>TELEMETRÍA SILVER</b><span>${int(payload.silver_llm_calls)} llamadas · ${int(payload.silver_governed_runs)} runs · ${int(payload.silver_tokens)} tokens</span></div>
+      <div><b>BILLING</b><span>${payload.billing_source_available ? 'Fuente real activa' : 'Fuente pendiente'} · última cobertura ${esc(lastBilling)} · overlap ${payload.temporal_overlap ? 'sí' : 'no'}</span></div>
+    </div>`;
+  }
+
   function renderRuns(rows) {
     const root = $('finopsRuns');
     if (!root) return;
@@ -114,14 +157,16 @@
   async function loadFinOps() {
     const period = Number($('periodSelect')?.value || 14);
     const status = $('finopsStatus');
+    ensureProductAttributionPanel();
     if (status) status.textContent = 'Consultando telemetría real…';
     try {
-      const [summary,daily,agents,runs,services] = await Promise.all([
+      const [summary,daily,agents,runs,services,product] = await Promise.all([
         get(`/agentops/finops/summary?days=${period}`),
         get(`/agentops/finops/daily?days=${period}`),
         get(`/agentops/finops/agents?days=${period}`),
         get(`/agentops/finops/runs?days=${period}&limit=20`),
         get(`/agentops/finops/services?days=${period}`),
+        get(`/agentops/finops/product-attribution?days=${period}`),
       ]);
       $('finopsCalls').textContent = int(summary.llm_calls);
       $('finopsTokens').textContent = int(summary.total_tokens);
@@ -141,6 +186,7 @@
       renderDaily(daily.series);
       renderAgents(agents.agents);
       renderServices(services);
+      renderProductAttribution(product);
       renderRuns(runs.runs);
       if (status) {
         if (summary.billing_cost_available) {
@@ -164,11 +210,13 @@
       if ($('finopsCostMeta')) $('finopsCostMeta').textContent='No fue posible consultar la fuente';
       if ($('finopsTokenTrend')) $('finopsTokenTrend').innerHTML='<text x="380" y="115" text-anchor="middle" fill="#8a93a4" font-size="12">No fue posible consultar FinOps</text>';
       if ($('finopsServiceCosts')) $('finopsServiceCosts').innerHTML='<div class="finops-empty">No fue posible consultar costos facturados.</div>';
+      renderProductAttribution(null);
       console.error('FinOps preview:', error);
     }
   }
 
   window.addEventListener('DOMContentLoaded', () => {
+    ensureProductAttributionPanel();
     loadFinOps();
     $('periodSelect')?.addEventListener('change', loadFinOps);
     $('refreshButton')?.addEventListener('click', () => setTimeout(loadFinOps, 50));

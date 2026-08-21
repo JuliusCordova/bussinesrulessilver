@@ -23,6 +23,7 @@ class SilverAgentRunner:
         agent: BaseAgent,
         request: AgentRunRequest,
         user_id: str = "business-rules-silver",
+        trace_id: str | None = None,
     ) -> AgentRunResponse:
         session_id = f"silver-{uuid.uuid4().hex}"
         payload = self._payload(request)
@@ -30,7 +31,11 @@ class SilverAgentRunner:
             app_name=self.APP_NAME,
             user_id=user_id,
             session_id=session_id,
-            state=self._initial_state(payload),
+            state=self._initial_state(
+                payload,
+                trace_id=trace_id,
+                requested_by=request.requested_by,
+            ),
         )
         runner = Runner(
             agent=agent,
@@ -134,7 +139,12 @@ class SilverAgentRunner:
         }
 
     @staticmethod
-    def _initial_state(payload: dict[str, Any]) -> dict[str, str]:
+    def _initial_state(
+        payload: dict[str, Any],
+        *,
+        trace_id: str | None = None,
+        requested_by: str | None = None,
+    ) -> dict[str, Any]:
         return {
             "request_json": json.dumps(payload, ensure_ascii=False),
             "business_keys_json": json.dumps(
@@ -146,4 +156,6 @@ class SilverAgentRunner:
             "notebook_spec_json": json.dumps(
                 payload["notebook_spec"], ensure_ascii=False
             ),
+            "finops_trace_id": trace_id,
+            "finops_requested_by": requested_by,
         }

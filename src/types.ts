@@ -31,6 +31,7 @@ export interface WorkflowState {
   version?: number;
   specId?: string;
   mappingVersion?: number;
+  packageVersion?: number;
   executionId?: string;
   batchId?: string;
   stateMessage?: string;

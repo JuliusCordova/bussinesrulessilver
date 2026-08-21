@@ -144,6 +144,12 @@ export function hydrateWorkflowForResume(workflow: SilverWorkflowRecord): Workfl
     activeStep: resumeStep(workflow),
     specId: workflow.spec_id ?? undefined,
     mappingVersion: workflow.mapping_version ?? undefined,
+    packageVersion: (() => {
+      const pkg = asRecord(workflow.artifact_package);
+      const execution = asRecord(workflow.execution);
+      const value = pkg?.package_version ?? execution?.package_version;
+      return typeof value === 'number' ? value : undefined;
+    })(),
     executionId: workflow.execution_id ?? undefined,
     executionStatus: executionStatus(workflow),
     projectId: workflow.source?.project_id ?? target?.project_id ?? undefined,

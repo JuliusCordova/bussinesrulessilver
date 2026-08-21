@@ -30,8 +30,22 @@ function processName(workflow: SilverWorkflowRecord) {
 }
 
 function packageVersion(workflow: SilverWorkflowRecord) {
-  const value = workflow.artifact_package?.package_version;
+  const execution = workflow.execution && typeof workflow.execution === 'object'
+    ? workflow.execution as Record<string, unknown>
+    : undefined;
+  const value = workflow.artifact_package?.package_version ?? execution?.package_version;
   return typeof value === 'number' ? `v${value}` : 'Pendiente';
+}
+
+function packageStorage(workflow: SilverWorkflowRecord) {
+  const execution = workflow.execution && typeof workflow.execution === 'object'
+    ? workflow.execution as Record<string, unknown>
+    : undefined;
+  const artifactPackage = workflow.artifact_package && typeof workflow.artifact_package === 'object'
+    ? workflow.artifact_package as Record<string, unknown>
+    : undefined;
+  const value = artifactPackage?.storage_uri ?? artifactPackage?.current_uri ?? execution?.artifact_package_uri;
+  return typeof value === 'string' && value ? value : 'Pendiente';
 }
 
 function targetName(workflow: SilverWorkflowRecord) {
@@ -93,8 +107,25 @@ export function ProductRoot() {
     setError(undefined);
     try {
       const latest = await silverApi.getWorkflow(workflowId);
+      const hydrated = hydrateWorkflowForResume(latest);
+      if (latest.spec_id) {
+        try {
+          const artifacts = await silverApi.listArtifacts(latest.spec_id);
+          hydrated.generatedArtifacts = artifacts;
+        } catch {
+          // The workflow remains reopenable even if historical artifact listing is unavailable.
+        }
+      }
+      const execution = latest.execution && typeof latest.execution === 'object'
+        ? latest.execution as Record<string, unknown>
+        : undefined;
+      const packageData = latest.artifact_package && typeof latest.artifact_package === 'object'
+        ? latest.artifact_package as Record<string, unknown>
+        : undefined;
+      const rawPackageVersion = packageData?.package_version ?? execution?.package_version;
+      if (typeof rawPackageVersion === 'number') hydrated.packageVersion = rawPackageVersion;
       setSelected(latest);
-      setResumeWorkflow(hydrateWorkflowForResume(latest));
+      setResumeWorkflow(hydrated);
       setMode('wizard');
     } catch (openError) {
       setError(openError instanceof Error ? openError.message : String(openError));
@@ -210,6 +241,7 @@ export function ProductRoot() {
                 <div><dt>Mapping version</dt><dd>{selected.mapping_version ? `v${selected.mapping_version}` : 'Pendiente'}</dd></div>
                 <div><dt>Spec</dt><dd>{selected.spec_id ?? 'Pendiente'}</dd></div>
                 <div><dt>Package</dt><dd>{packageVersion(selected)}</dd></div>
+                <div><dt>Storage package</dt><dd title={packageStorage(selected)}>{packageStorage(selected)}</dd></div>
                 <div><dt>Origen</dt><dd>{selected.source?.fully_qualified_name ?? 'Pendiente'}</dd></div>
                 <div><dt>Destino</dt><dd>{targetName(selected)}</dd></div>
                 <div><dt>Responsable</dt><dd>{selected.created_by ?? 'No disponible'}</dd></div>

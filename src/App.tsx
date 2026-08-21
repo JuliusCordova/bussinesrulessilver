@@ -20,7 +20,7 @@ const steps: Array<{ id: StepId; label: string; description: string }> = [
   { id: 'incremental', label: 'Incrementalidad', description: 'Business key y watermark' },
   { id: 'mapping', label: 'Mapping', description: 'Transformaciones y campos derivados' },
   { id: 'rules', label: 'Reglas', description: 'Reglas editables y aprobacion' },
-  { id: 'artifacts', label: 'Artefactos', description: 'DDL, notebook y paquete' },
+  { id: 'artifacts', label: 'Package & Versiones', description: 'Versiones, Storage, hashes y paquete gobernado' },
   { id: 'execution', label: 'Dataproc', description: 'Validacion y ejecucion' },
   { id: 'governance', label: 'Gobierno', description: 'AgentOps, auditoria y salud' },
 ];
@@ -1901,7 +1901,7 @@ function ArtifactsStep({
   onNext: () => void;
 }) {
   const generated = workflow.generatedArtifacts ?? [];
-  const displayArtifacts = generated.length
+  const displayArtifacts: GeneratedArtifact[] = generated.length
     ? generated
     : artifacts.map((artifactType) => ({
         artifact_id: undefined,
@@ -1941,12 +1941,22 @@ function ArtifactsStep({
             : 'Revisa y aprueba las reglas antes de crear artefactos.'}
         </span>
       </div>
+      <div className="resultMetrics">
+        <article><span>Workflow</span><strong>v{workflow.version ?? 1}</strong></article>
+        <article><span>Mapping</span><strong>v{workflow.mappingVersion ?? 1}</strong></article>
+        <article><span>Spec</span><strong>{workflow.specId ?? 'Pendiente'}</strong></article>
+        <article><span>Package</span><strong>{workflow.packageVersion ? `v${workflow.packageVersion}` : 'Pendiente'}</strong></article>
+      </div>
       <div className="artifactGrid">
         {displayArtifacts.map((artifact) => (
           <article key={artifact.artifact_id ?? artifact.artifact_type}>
             <strong>{artifact.artifact_type}</strong>
             <span>{artifact.artifact_name}</span>
             <em>{artifact.generation_status ?? 'GENERATED'}</em>
+            <small>Versión: {artifact.artifact_version ? `v${artifact.artifact_version}` : 'N/A'}</small>
+            <small>Validación: {artifact.validation_status ?? 'PENDIENTE'}</small>
+            <small title={artifact.storage_uri ?? undefined}>Storage: {artifact.storage_uri ?? 'Pendiente'}</small>
+            <small title={artifact.content_hash ?? undefined}>Hash: {artifact.content_hash ?? 'Pendiente'}</small>
             {generated.length > 0 && (
               <button onClick={() => onDownload(artifact)}>Descargar</button>
             )}

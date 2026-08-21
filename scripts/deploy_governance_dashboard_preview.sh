@@ -7,6 +7,7 @@ SERVICE="${SERVICE:-business-rules-silver-governance-preview}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREVIEW_DIR="$ROOT_DIR/preview/governance-dashboard"
 EXPECTED_BACKEND_URL="${SILVER_API_URL:-https://silver-refinement-agent-mkqutd4koq-uc.a.run.app}"
+FINOPS_API_URL="${FINOPS_API_URL:-https://silver-refinement-agent-merge-test-mkqutd4koq-uc.a.run.app}"
 
 command -v gcloud >/dev/null
 command -v curl >/dev/null
@@ -15,27 +16,37 @@ test -f "$PREVIEW_DIR/Dockerfile"
 test -f "$PREVIEW_DIR/index.html"
 test -f "$PREVIEW_DIR/app.js"
 test -f "$PREVIEW_DIR/styles.css"
+test -f "$PREVIEW_DIR/finops.js"
+test -f "$PREVIEW_DIR/finops.css"
 
 echo "=== Gobierno DataOps interactive preview ==="
-echo "Project: $PROJECT_ID"
-echo "Region : $REGION"
-echo "Service: $SERVICE"
-echo "Backend: $EXPECTED_BACKEND_URL"
+echo "Project : $PROJECT_ID"
+echo "Region  : $REGION"
+echo "Service : $SERVICE"
+echo "Backend : $EXPECTED_BACKEND_URL"
+echo "FinOps  : $FINOPS_API_URL"
 echo
 
-echo "[1/5] Validando frontend preview..."
+echo "[1/6] Validando frontend preview..."
 if command -v node >/dev/null 2>&1; then
   node --check "$PREVIEW_DIR/app.js"
+  node --check "$PREVIEW_DIR/finops.js"
 fi
 grep -Fq 'detailDrawer' "$PREVIEW_DIR/index.html"
 grep -Fq 'data-kpi-detail="runs"' "$PREVIEW_DIR/index.html"
+grep -Fq 'id="finops"' "$PREVIEW_DIR/index.html"
+grep -Fq 'finopsTokenTrend' "$PREVIEW_DIR/index.html"
 grep -Fq 'openRunDetail' "$PREVIEW_DIR/app.js"
 grep -Fq 'openAgentDetail' "$PREVIEW_DIR/app.js"
 grep -Fq 'data-run-id' "$PREVIEW_DIR/app.js"
-echo "PASS: shell interactivo y drill-downs presentes"
+grep -Fq '/agentops/finops/summary' "$PREVIEW_DIR/finops.js"
+grep -Fq '/agentops/finops/daily' "$PREVIEW_DIR/finops.js"
+grep -Fq '/agentops/finops/agents' "$PREVIEW_DIR/finops.js"
+grep -Fq '/agentops/finops/runs' "$PREVIEW_DIR/finops.js"
+echo "PASS: shell interactivo, drill-downs y FinOps presentes"
 
 echo
-echo "[2/5] Validando backend canónico..."
+echo "[2/6] Validando backend canónico..."
 curl -fsS --retry 3 --retry-delay 1 "$EXPECTED_BACKEND_URL/health" >/tmp/governance-preview-backend-health.json
 grep -Fq '"status"' /tmp/governance-preview-backend-health.json
 curl -fsS --retry 3 --retry-delay 1 "$EXPECTED_BACKEND_URL/agentops/governance/summary" >/tmp/governance-preview-summary.json
@@ -45,7 +56,30 @@ curl -fsS --retry 3 --retry-delay 1 "$EXPECTED_BACKEND_URL/silver-agents" >/tmp/
 echo "PASS: backend y contratos AgentOps accesibles"
 
 echo
-echo "[3/5] Desplegando preview aislado en Cloud Run..."
+echo "[3/6] Validando FinOps real del candidato..."
+curl -fsS --retry 3 --retry-delay 1 "$FINOPS_API_URL/agentops/finops/summary?days=30" >/tmp/governance-preview-finops-summary.json
+curl -fsS --retry 3 --retry-delay 1 "$FINOPS_API_URL/agentops/finops/daily?days=30" >/tmp/governance-preview-finops-daily.json
+curl -fsS --retry 3 --retry-delay 1 "$FINOPS_API_URL/agentops/finops/agents?days=30" >/tmp/governance-preview-finops-agents.json
+curl -fsS --retry 3 --retry-delay 1 "$FINOPS_API_URL/agentops/finops/runs?days=30&limit=20" >/tmp/governance-preview-finops-runs.json
+python3 - <<'PY'
+import json
+from pathlib import Path
+s = json.loads(Path('/tmp/governance-preview-finops-summary.json').read_text())
+d = json.loads(Path('/tmp/governance-preview-finops-daily.json').read_text())
+a = json.loads(Path('/tmp/governance-preview-finops-agents.json').read_text())
+r = json.loads(Path('/tmp/governance-preview-finops-runs.json').read_text())
+assert int(s.get('llm_calls') or 0) > 0, s
+assert int(s.get('total_tokens') or 0) > 0, s
+assert s.get('billing_cost_available') is False, s
+assert s.get('cost_usd') is None, s
+assert isinstance(d.get('series'), list) and d['series'], d
+assert isinstance(a.get('agents'), list) and a['agents'], a
+assert isinstance(r.get('runs'), list) and r['runs'], r
+print('PASS: FinOps real disponible; USD permanece no disponible por diseño')
+PY
+
+echo
+echo "[4/6] Desplegando preview aislado en Cloud Run..."
 gcloud run deploy "$SERVICE" \
   --source "$PREVIEW_DIR" \
   --project "$PROJECT_ID" \
@@ -62,25 +96,31 @@ PREVIEW_URL="$(gcloud run services describe "$SERVICE" \
 test -n "$PREVIEW_URL"
 
 echo
-echo "[4/5] Smoke test del frontend desplegado..."
+echo "[5/6] Smoke test del frontend desplegado..."
 PREVIEW_HTML=/tmp/governance-preview-index.html
 PREVIEW_JS=/tmp/governance-preview-app.js
+PREVIEW_FINOPS_JS=/tmp/governance-preview-finops.js
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/" -o "$PREVIEW_HTML"
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/app.js" -o "$PREVIEW_JS"
+curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/finops.js" -o "$PREVIEW_FINOPS_JS"
 
 grep -Fq 'Gobierno DataOps — Business Rules Silver' "$PREVIEW_HTML"
 grep -Fq 'Preview interactivo' "$PREVIEW_HTML"
+grep -Fq 'FinOps IA · consumo real' "$PREVIEW_HTML"
 grep -Fq '/agentops/governance/summary' "$PREVIEW_JS"
 grep -Fq '/silver-agents' "$PREVIEW_JS"
 grep -Fq 'openRunDetail' "$PREVIEW_JS"
 grep -Fq 'openAgentDetail' "$PREVIEW_JS"
-echo "PASS: preview interactivo servido y enlazado a contratos canónicos"
+grep -Fq '/agentops/finops/summary' "$PREVIEW_FINOPS_JS"
+grep -Fq 'No disponible' "$PREVIEW_FINOPS_JS"
+echo "PASS: preview interactivo servido con Gobierno + FinOps real"
 
 echo
-echo "[5/5] Preview listo"
+echo "[6/6] Preview listo"
 echo "========================================================"
 echo "PREVIEW_URL=$PREVIEW_URL"
 echo "DIRECT_DASHBOARD_URL=$PREVIEW_URL/"
 echo "DEEP_LINK_FORMAT=$PREVIEW_URL/#run/<run_id>"
 echo "BACKEND_URL=$EXPECTED_BACKEND_URL"
+echo "FINOPS_API_URL=$FINOPS_API_URL"
 echo "========================================================"

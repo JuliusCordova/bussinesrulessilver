@@ -5,4 +5,5 @@ COPY styles.css /usr/share/nginx/html/styles.css
 COPY app.js /usr/share/nginx/html/app.js
 COPY finops.css /usr/share/nginx/html/finops.css
 COPY finops.js /usr/share/nginx/html/finops.js
+COPY theme-red.css /usr/share/nginx/html/theme-red.css
 EXPOSE 8080

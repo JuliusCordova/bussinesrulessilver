@@ -67,17 +67,21 @@
         <div class="finops-head"><div><h2>FinOps IA · consumo real</h2><p>Telemetría Gemini ADK de Business Rules Silver, correlacionada por run gobernado.<span id="finopsPeriodLabel" class="finops-period">Últimos 14 días</span></p></div><span id="finopsStatus" class="finops-source-badge">Consultando…</span></div>
         <div class="finops-kpis">
           <article class="finops-kpi"><span>Llamadas LLM</span><strong id="finopsCalls">—</strong><small>Solo agentes Silver instrumentados</small></article>
-          <article class="finops-kpi"><span>Tokens totales</span><strong id="finopsTokens">—</strong><small>Prompt + respuesta + metadata del modelo</small></article>
+          <article class="finops-kpi"><span>Tokens totales</span><strong id="finopsTokens">—</strong><small>Conteo reportado por Gemini</small></article>
           <article class="finops-kpi"><span>Runs gobernados</span><strong id="finopsRunsCount">—</strong><small>Correlación por trace/run ID</small></article>
           <article class="finops-kpi"><span>Latencia promedio</span><strong id="finopsLatency">—</strong><small>Tiempo real observado por llamada</small></article>
-          <article class="finops-kpi cost"><span>Costo facturado</span><strong id="finopsCost">No disponible</strong><small id="finopsCostMeta">Cloud Billing Export no configurado</small></article>
+          <article class="finops-kpi cost"><span>Costo GCP facturado (proyecto)</span><strong id="finopsCost">No disponible</strong><small id="finopsCostMeta">Esperando Cloud Billing Export</small></article>
         </div>
         <div class="finops-grid">
           <article class="finops-panel"><h3>Evolución temporal de tokens</h3><p>Consumo real agregado por día. Registros históricos sin timestamp se excluyen del gráfico.</p><svg id="finopsTokenTrend" class="finops-chart" viewBox="0 0 760 230" role="img" aria-label="Tendencia de tokens Silver"></svg></article>
           <article class="finops-panel"><h3>Consumo por agente</h3><p>Tokens, llamadas y latencia observada.</p><div id="finopsAgentBars" class="finops-agent-bars"></div></article>
         </div>
-        <article class="finops-panel"><h3>Runs con consumo IA</h3><p>Drill-down técnico por run gobernado.</p><div id="finopsRuns" class="finops-runs"></div></article>
-        <div class="finops-note"><i>ⓘ</i><div><strong>Semántica de costo:</strong> esta vista muestra consumo IA real. Los USD permanecerán como “No disponible” hasta validar Cloud Billing Export. No se calculan ni muestran costos sintéticos.</div></div>
+        <div class="finops-grid finops-cost-grid">
+          <article class="finops-panel"><h3>Facturación por servicio GCP</h3><p>Costo neto real del proyecto según Detailed Usage Cost Export. No representa todavía atribución exclusiva a Silver.</p><div id="finopsServiceCosts" class="finops-service-costs"><div class="finops-empty">Esperando la primera carga de Cloud Billing Export.</div></div></article>
+          <article class="finops-panel"><h3>Semántica de costos</h3><p>Separación obligatoria entre factura y atribución operativa.</p><div class="finops-semantics"><div><b>FACTURADO</b><span>Cloud Billing Export · USD reales del proyecto</span></div><div><b>ATRIBUIDO</b><span>Próxima capa: asignación gobernada a Silver / agente / run</span></div><div><b>NO ATRIBUIBLE</b><span>Consumo compartido sin evidencia suficiente para repartir</span></div></div></article>
+        </div>
+        <article class="finops-panel"><h3>Runs con consumo IA</h3><p>Drill-down técnico por run gobernado. El consumo está correlacionado; el costo por run aún no se atribuye.</p><div id="finopsRuns" class="finops-runs"></div></article>
+        <div class="finops-note"><i>ⓘ</i><div><strong>Semántica de costo:</strong> los USD solo se muestran cuando provienen de Cloud Billing Export. El costo facturado corresponde primero al proyecto GCP; ningún costo se presenta como “por agente” o “por run” hasta definir y validar la regla de atribución.</div></div>
       </section>
 
       <section class="dashboard-grid middle-grid">

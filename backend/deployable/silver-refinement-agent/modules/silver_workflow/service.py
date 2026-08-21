@@ -16,6 +16,7 @@ from .models import (
     GenerateBusinessRulesRequest,
     ReviewQualityRequest,
     SaveBusinessRulesDraftRequest,
+    SaveSilverMappingRequest,
     SaveSilverSpecificationRequest,
     SilverWorkflowListResponse,
     SilverWorkflowRecord,
@@ -139,6 +140,36 @@ class SilverWorkflowService:
             workflow_id, expected_version=request.expected_version, section=confirmed,
             confirmed_by=request.confirmed_by, confirmation_reason=request.confirmation_reason,
             updated_at=confirmed_at,
+        ))
+
+    def save_mapping_version(self, workflow_id: str, request: SaveSilverMappingRequest) -> SilverWorkflowRecord:
+        current = self._require_version(workflow_id, request.expected_version)
+        if not current.source_confirmed or current.schema_context is None:
+            raise WorkflowStateConflictError("La fuente y el esquema deben estar confirmados antes de editar el mapping")
+        if current.business_rules.status != BusinessRuleStatus.CONFIRMED:
+            raise WorkflowStateConflictError("Las Business Rules deben estar confirmadas antes de versionar el mapping")
+        if current.status == WorkflowStatus.EXECUTING:
+            raise WorkflowStateConflictError("No se puede editar el mapping mientras el proceso está ejecutándose")
+
+        source_columns = {column.name for column in current.schema_context.columns}
+        unknown = sorted({
+            column.source_column
+            for column in request.columns
+            if column.source_column and column.source_column not in source_columns
+        })
+        if unknown:
+            raise ValueError("Las columnas de origen no existen en el esquema confirmado: " + ", ".join(unknown))
+
+        next_mapping_version = (current.mapping_version or 0) + 1
+        return self._with_actions(self.repository.save_mapping_version(
+            workflow_id,
+            expected_version=request.expected_version,
+            mapping_version=next_mapping_version,
+            target=request.target,
+            mapping_rules=[column.model_dump(mode="json") for column in request.columns],
+            edited_by=request.edited_by,
+            change_reason=request.change_reason,
+            updated_at=datetime.now(timezone.utc),
         ))
 
     def save_specification(self, workflow_id: str, request: SaveSilverSpecificationRequest) -> SilverWorkflowRecord:

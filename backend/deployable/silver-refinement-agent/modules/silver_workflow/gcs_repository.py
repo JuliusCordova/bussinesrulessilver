@@ -104,6 +104,36 @@ class CloudStorageWorkflowRepository(WorkflowRepository):
             return record.model_copy(deep=True, update={"version": record.version + 1, "active_step": 4, "business_rules": section, "updated_at": updated_at, "metadata": metadata})
         return self._update(workflow_id, expected_version, mutate)
 
+    def save_mapping_version(self, workflow_id: str, *, expected_version: int, mapping_version: int, target: SilverTargetReference, mapping_rules: list[dict[str, object]], edited_by: str, change_reason: str, updated_at: datetime) -> SilverWorkflowRecord:
+        def mutate(record: SilverWorkflowRecord) -> SilverWorkflowRecord:
+            metadata = dict(record.metadata)
+            metadata.update({
+                "mapping_last_edited_by": edited_by,
+                "mapping_last_change_reason": change_reason,
+                "mapping_last_changed_at": updated_at.isoformat(),
+                "superseded_spec_id": record.spec_id,
+                "superseded_execution_id": record.execution_id,
+                "superseded_mapping_version": record.mapping_version,
+            })
+            return record.model_copy(deep=True, update={
+                "version": record.version + 1,
+                "status": WorkflowStatus.IN_PROGRESS,
+                "active_step": 4,
+                "mapping_version": mapping_version,
+                "silver_target": target,
+                "mapping_rules": mapping_rules,
+                "spec_id": None,
+                "quality_review": None,
+                "artifact_package": None,
+                "governance": None,
+                "execution": None,
+                "validation": None,
+                "execution_id": None,
+                "updated_at": updated_at,
+                "metadata": metadata,
+            })
+        return self._update(workflow_id, expected_version, mutate)
+
     def save_specification(self, workflow_id: str, *, expected_version: int, spec_id: str, mapping_version: int, target: SilverTargetReference, mapping_rules: list[dict[str, object]], created_by: str, change_reason: str, updated_at: datetime) -> SilverWorkflowRecord:
         def mutate(record: SilverWorkflowRecord) -> SilverWorkflowRecord:
             if record.spec_id is not None:

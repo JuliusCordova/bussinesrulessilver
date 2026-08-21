@@ -249,6 +249,21 @@ class SaveSilverSpecificationRequest(BaseModel):
         return self
 
 
+class SaveSilverMappingRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    target: SilverTargetReference
+    columns: list[SilverMappingColumn] = Field(min_length=1)
+    edited_by: str = Field(min_length=2, max_length=200)
+    change_reason: str = Field(min_length=2, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_unique_target_columns(self) -> "SaveSilverMappingRequest":
+        names = [column.name for column in self.columns]
+        if len(names) != len(set(names)):
+            raise ValueError("Cada columna destino Silver debe tener un nombre único")
+        return self
+
+
 class ReviewQualityRequest(BaseModel):
     expected_version: int = Field(ge=1)
     decision: QualityReviewDecision

@@ -171,6 +171,7 @@ export function hydrateWorkflowForResume(workflow: SilverWorkflowRecord): Workfl
         ? validation as NonNullable<WorkflowState['validationResult']>
         : undefined,
     lastAction: `Proceso persistido recuperado · v${workflow.version}`,
+    resumedFromBackend: true,
     backendMessage: JSON.stringify({
       workflow_id: workflow.workflow_id,
       version: workflow.version,

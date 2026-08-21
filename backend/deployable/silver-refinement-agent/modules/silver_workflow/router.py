@@ -17,6 +17,7 @@ from .models import (
     GenerateBusinessRulesRequest,
     ReviewQualityRequest,
     SaveBusinessRulesDraftRequest,
+    SaveSilverMappingRequest,
     SaveSilverSpecificationRequest,
     SilverWorkflowListResponse,
     SilverWorkflowRecord,
@@ -34,6 +35,7 @@ register_destination_catalog_routes(router)
 require_workflow_create = workflow_business_operation("workflow_create")
 require_workflow_list = workflow_business_operation("workflow_list")
 require_workflow_get = workflow_business_operation("workflow_get")
+require_workflow_mapping = workflow_business_operation("workflow_mapping")
 require_workflow_confirm_source = workflow_business_operation("workflow_confirm_source")
 require_business_rules_get = workflow_business_operation("business_rules_get")
 require_business_rules_draft = workflow_business_operation("business_rules_draft")
@@ -126,6 +128,20 @@ def confirm_workflow_business_rules(workflow_id: str, request: ConfirmBusinessRu
     except (WorkflowVersionConflictError, WorkflowStateConflictError) as exc:
         raise _conflict(exc) from exc
     except BusinessRuleValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
+
+@router.put("/{workflow_id}/mapping", response_model=SilverWorkflowRecord)
+def save_workflow_mapping(workflow_id: str, request: SaveSilverMappingRequest, business: WorkflowBusinessOperation = Depends(require_workflow_mapping)) -> SilverWorkflowRecord:
+    try:
+        record = business.workflow_service.save_mapping_version(workflow_id, request)
+        business.record_success(workflow_id=workflow_id)
+        return record
+    except WorkflowNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except (WorkflowVersionConflictError, WorkflowStateConflictError) as exc:
+        raise _conflict(exc) from exc
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
 

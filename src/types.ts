@@ -64,6 +64,7 @@ export interface WorkflowState {
   errorDetail?: string;
   processingLabel?: string;
   backendMessage?: string;
+  resumedFromBackend?: boolean;
   validationResult?: {
     status: string;
     conformant: boolean;

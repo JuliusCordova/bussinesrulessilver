@@ -718,7 +718,7 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
                 mappingSource: 'USER',
               }));
             }}
-            onNext={() => {
+            onNext={async () => {
               const rules = workflow.mappingRules?.length
                 ? workflow.mappingRules
                 : directMappingFromColumns(workflow.sourceColumns ?? []);
@@ -732,6 +732,47 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
                 applyError(new Error('Las columnas destino deben tener nombres unicos y no vacios.'));
                 return;
               }
+              if (workflow.resumedFromBackend && workflow.workflowId) {
+                await runAction('Persistiendo nueva versión gobernada del mapping...', async () => {
+                  const includedRules = rules.filter((rule) => rule.include);
+                  const updated = await silverApi.saveMapping(workflow.workflowId!, {
+                    expected_version: currentVersion(workflow),
+                    target: {
+                      project_id: workflow.projectId ?? seedSource.projectId,
+                      dataset_id: workflow.targetDataset ?? seedSource.targetDataset,
+                      table_id: workflow.targetTable ?? seedSource.targetTable,
+                    },
+                    columns: includedRules.map((rule) => ({
+                      name: rule.targetColumn,
+                      data_type: rule.targetType,
+                      nullable: rule.nullable,
+                      source_column: rule.sourceColumn || null,
+                      transformation: toBackendTransformation(rule.transformationType),
+                    })),
+                    edited_by: REQUESTED_BY,
+                    change_reason: 'Mapping editado desde Procesos Silver; downstream requiere revalidación.',
+                  });
+                  setWorkflow((current) => ({
+                    ...current,
+                    ...workflowPatchFromRecord(updated),
+                    mappingRules: rules,
+                    mappingSource: 'USER',
+                    mappingVersion: updated.mapping_version ?? current.mappingVersion,
+                    specId: undefined,
+                    executionId: undefined,
+                    executionStatus: undefined,
+                    generatedArtifacts: undefined,
+                    qualityReviewed: false,
+                    qualityReviewDecision: undefined,
+                    activeStep: 'artifacts',
+                    resumedFromBackend: true,
+                    ...demoWorkflowPatch(`Mapping v${updated.mapping_version ?? '?'} persistido; Spec y Package requieren regeneración`),
+                    backendMessage: JSON.stringify(updated),
+                  }));
+                });
+                return;
+              }
+
               setWorkflow((current) => ({
                 ...current,
                 mappingRules: rules,

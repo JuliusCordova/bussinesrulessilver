@@ -81,6 +81,12 @@ export const silverApi = {
       body: JSON.stringify(payload),
     }),
 
+  saveMapping: (workflowId: string, payload: unknown) =>
+    request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}/mapping`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+
   generateBusinessRules: (workflowId: string, payload: unknown) =>
     request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}/business-rules/generate`, {
       method: 'POST',

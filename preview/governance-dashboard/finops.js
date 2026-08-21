@@ -8,11 +8,16 @@
   const $ = (id) => document.getElementById(id);
   const int = (v) => new Intl.NumberFormat('es-PE').format(Number(v || 0));
   const ms = (v) => `${Math.round(Number(v || 0)).toLocaleString('es-PE')} ms`;
-  const esc = (v) => String(v ?? '').replace(/[&<>'"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[c]));
+  const esc = (v) => String(v ?? '').replace(/[&<>'\"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '\"':'&quot;' }[c]));
   const shortDate = (value) => {
     const d = new Date(`${value}T12:00:00Z`);
     return Number.isNaN(d.getTime()) ? String(value || '') : new Intl.DateTimeFormat('es-PE', { day:'2-digit', month:'short' }).format(d);
   };
+  const agentLabel = (name) => String(name || 'sin-agente')
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 
   async function get(path) {
     const response = await fetch(`${API_BASE}${path}`, { headers: { Accept: 'application/json' } });
@@ -48,14 +53,25 @@
       return;
     }
     const max = Math.max(1, ...data.map((r)=>Number(r.total_tokens||0)));
-    root.innerHTML = data.map((r)=>`<div class="finops-agent-row"><div><strong>${esc(r.agent_name)}</strong><span>${int(r.llm_calls)} llamadas · ${ms(r.avg_latency_ms)}</span></div><div class="finops-agent-bar"><i style="width:${Math.max(4,Number(r.total_tokens||0)*100/max)}%"></i></div><b>${int(r.total_tokens)} tokens</b></div>`).join('');
+    root.innerHTML = data.map((r)=>`<div class="finops-agent-row"><div><strong>${esc(agentLabel(r.agent_name))}</strong><span>${esc(r.agent_name)} · ${int(r.llm_calls)} llamadas · ${ms(r.avg_latency_ms)}</span></div><div class="finops-agent-bar"><i style="width:${Math.max(4,Number(r.total_tokens||0)*100/max)}%"></i></div><b>${int(r.total_tokens)} tokens</b></div>`).join('');
   }
 
   function renderRuns(rows) {
     const root = $('finopsRuns');
     if (!root) return;
     const data = Array.isArray(rows) ? rows.slice(0, 6) : [];
-    root.innerHTML = data.length ? data.map((r)=>`<div class="finops-run"><div><strong>${esc(r.run_id)}</strong><span>${esc((r.agents||[]).join(', '))}</span></div><div><b>${int(r.total_tokens)}</b><span>tokens · ${int(r.llm_calls)} llamadas</span></div></div>`).join('') : '<div class="finops-empty">Sin runs con telemetría IA.</div>';
+    root.innerHTML = data.length ? data.map((r)=>{
+      const agents = Array.isArray(r.agents) && r.agents.length ? r.agents : ['sin-agente'];
+      const agentBadges = agents.map((name)=>`<span class="finops-agent-chip">Agente: ${esc(agentLabel(name))}</span>`).join('');
+      return `<button class="finops-run" type="button" data-finops-run-id="${esc(r.run_id)}" title="Abrir detalle del run ${esc(r.run_id)}"><div class="finops-run-main"><div class="finops-agent-chips">${agentBadges}</div><strong class="finops-run-id">${esc(r.run_id)}</strong><span class="finops-run-model">${esc((r.models||[]).join(', ') || 'modelo no informado')}</span></div><div class="finops-run-metrics"><b>${int(r.total_tokens)}</b><span>tokens · ${int(r.llm_calls)} llamadas</span></div></button>`;
+    }).join('') : '<div class="finops-empty">Sin runs con telemetría IA.</div>';
+
+    root.querySelectorAll('[data-finops-run-id]').forEach((button)=>{
+      button.addEventListener('click', ()=>{
+        const runId = button.getAttribute('data-finops-run-id');
+        if (runId) window.location.hash = `run/${encodeURIComponent(runId)}`;
+      });
+    });
   }
 
   async function loadFinOps() {

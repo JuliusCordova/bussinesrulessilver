@@ -10,67 +10,73 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 function schemaColumns(workflow: SilverWorkflowRecord): CatalogField[] {
   const context = asRecord(workflow.schema_context);
   const rawColumns = Array.isArray(context?.columns) ? context.columns : [];
+  const columns: CatalogField[] = [];
 
-  return rawColumns
-    .map((raw) => {
-      const column = asRecord(raw);
-      if (!column) return null;
-      const name = String(column.name ?? '');
-      const type = String(column.data_type ?? column.type ?? '');
-      if (!name || !type) return null;
-      return {
-        name,
-        type,
-        mode: column.nullable === false ? 'REQUIRED' : String(column.mode ?? 'NULLABLE'),
-        description: typeof column.description === 'string' ? column.description : undefined,
-      } satisfies CatalogField;
-    })
-    .filter((column): column is CatalogField => Boolean(column));
+  for (const raw of rawColumns) {
+    const column = asRecord(raw);
+    if (!column) continue;
+
+    const name = String(column.name ?? '');
+    const type = String(column.data_type ?? column.type ?? '');
+    if (!name || !type) continue;
+
+    columns.push({
+      name,
+      type,
+      mode: column.nullable === false ? 'REQUIRED' : String(column.mode ?? 'NULLABLE'),
+      description: typeof column.description === 'string' ? column.description : undefined,
+    });
+  }
+
+  return columns;
 }
 
 function mappingRules(workflow: SilverWorkflowRecord): MappingRule[] {
-  return (workflow.mapping_rules ?? [])
-    .map((raw) => {
-      const row = asRecord(raw);
-      if (!row) return null;
-      const transformation = asRecord(row.transformation);
-      const sourceColumns = Array.isArray(transformation?.source_columns)
-        ? transformation.source_columns.map(String)
-        : [];
-      const sourceColumn = String(
-        row.source_column ?? sourceColumns[0] ?? row.name ?? '',
-      );
-      const targetColumn = String(row.target_column ?? row.name ?? '');
-      const targetType = String(row.target_type ?? row.data_type ?? 'STRING');
-      if (!targetColumn) return null;
+  const rules: MappingRule[] = [];
 
-      return {
-        sourceColumn,
-        targetColumn,
-        targetType,
-        transformationType: String(
-          transformation?.type ?? row.transformation_type ?? (sourceColumn ? 'DIRECT' : 'DERIVED'),
-        ),
-        include: row.include !== false,
-        nullable: row.nullable !== false,
-        parameters: asRecord(transformation?.parameters) ?? asRecord(row.parameters) ?? {},
-        confidence: typeof row.confidence === 'number' ? row.confidence : undefined,
-        reason:
-          typeof row.reason === 'string'
-            ? row.reason
-            : typeof row.recommendation_reason === 'string'
-              ? row.recommendation_reason
-              : 'Mapping recuperado del workflow persistido.',
-        risk:
-          typeof row.risk === 'string'
-            ? row.risk
-            : typeof row.recommendation_risk === 'string'
-              ? row.recommendation_risk
-              : undefined,
-        requiresApproval: Boolean(row.requires_approval),
-      } satisfies MappingRule;
-    })
-    .filter((row): row is MappingRule => Boolean(row));
+  for (const raw of workflow.mapping_rules ?? []) {
+    const row = asRecord(raw);
+    if (!row) continue;
+
+    const transformation = asRecord(row.transformation);
+    const sourceColumns = Array.isArray(transformation?.source_columns)
+      ? transformation.source_columns.map(String)
+      : [];
+    const sourceColumn = String(
+      row.source_column ?? sourceColumns[0] ?? row.name ?? '',
+    );
+    const targetColumn = String(row.target_column ?? row.name ?? '');
+    const targetType = String(row.target_type ?? row.data_type ?? 'STRING');
+    if (!targetColumn) continue;
+
+    rules.push({
+      sourceColumn,
+      targetColumn,
+      targetType,
+      transformationType: String(
+        transformation?.type ?? row.transformation_type ?? (sourceColumn ? 'DIRECT' : 'DERIVED'),
+      ),
+      include: row.include !== false,
+      nullable: row.nullable !== false,
+      parameters: asRecord(transformation?.parameters) ?? asRecord(row.parameters) ?? {},
+      confidence: typeof row.confidence === 'number' ? row.confidence : undefined,
+      reason:
+        typeof row.reason === 'string'
+          ? row.reason
+          : typeof row.recommendation_reason === 'string'
+            ? row.recommendation_reason
+            : 'Mapping recuperado del workflow persistido.',
+      risk:
+        typeof row.risk === 'string'
+          ? row.risk
+          : typeof row.recommendation_risk === 'string'
+            ? row.recommendation_risk
+            : undefined,
+      requiresApproval: Boolean(row.requires_approval),
+    });
+  }
+
+  return rules;
 }
 
 function inferKeys(workflow: SilverWorkflowRecord): string[] {

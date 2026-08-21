@@ -1,0 +1,49 @@
+:root{
+  --brand-red:#ff462d;
+  --brand-red-strong:#e93b25;
+  --brand-red-soft:#fff2ef;
+  --brand-red-soft-2:#fff8f6;
+  --brand-red-border:#ffd2ca;
+}
+
+/* Kyndryl-style color language only. The BR logo is intentionally untouched. */
+.sidebar{overflow-x:hidden}
+.sidebar-footer{width:100%;min-width:0;box-sizing:border-box;padding:0;margin-top:auto}
+.environment-card,.version-card{width:100%;max-width:100%;min-width:0;box-sizing:border-box;overflow:hidden}
+.environment-card small,.version-card small{max-width:100%}
+
+.nav-item:hover{background:var(--brand-red-soft-2);color:var(--brand-red-strong)}
+.nav-item.active{color:var(--brand-red-strong);background:linear-gradient(90deg,rgba(255,70,45,.14),rgba(255,70,45,.055));font-weight:700}
+.nav-item.active span{color:var(--brand-red-strong)}
+
+.eyebrow{color:var(--brand-red-strong)}
+.primary-button{border-color:var(--brand-red-strong);background:var(--brand-red);box-shadow:0 7px 16px rgba(255,70,45,.18)}
+.primary-button:hover{background:var(--brand-red-strong)}
+
+.kpi-card:hover{border-color:var(--brand-red-border)}
+.kpi-card.violet,.kpi-card.purple{color:var(--brand-red);background:linear-gradient(135deg,#fff,var(--brand-red-soft-2))}
+.kpi-icon{background:rgba(255,70,45,.09)}
+
+.persistence-badge{color:var(--brand-red-strong);background:var(--brand-red-soft)}
+.chart-legend span:before{background:var(--brand-red)}
+.interactive-row:hover,.run-row:hover{background:var(--brand-red-soft-2)}
+.filter-bar.active{background:var(--brand-red-soft-2);border-color:var(--brand-red-border)}
+.filter-bar button{background:var(--brand-red-soft);color:var(--brand-red-strong)}
+.status-chip.running,.status-chip.queued,.status-chip.active{background:var(--brand-red-soft);color:var(--brand-red-strong)}
+
+.agent-bar i{background:linear-gradient(90deg,var(--brand-red),#ff7b68)}
+.agent-card{background:linear-gradient(140deg,#fff,var(--brand-red-soft-2))}
+.agent-card:hover{border-color:var(--brand-red-border);box-shadow:0 9px 18px rgba(255,70,45,.08)}
+.agent-meta span{color:var(--brand-red-strong);background:var(--brand-red-soft)}
+.agent-card>small{color:var(--brand-red)}
+.architecture-node b{color:var(--brand-red-strong);background:var(--brand-red-soft)}
+
+.finops-source-badge{background:var(--brand-red-soft);color:var(--brand-red-strong)}
+.finops-agent-bar i{background:linear-gradient(90deg,var(--brand-red),#ff7b68)}
+.finops-run b{color:var(--brand-red-strong)}
+.finops-agent-badge{background:var(--brand-red-soft);color:var(--brand-red-strong);border-color:var(--brand-red-border)}
+.finops-run:hover{border-color:var(--brand-red-border);box-shadow:0 8px 18px rgba(255,70,45,.07)}
+
+@media(max-width:1180px){
+  .sidebar-footer{padding-right:0}
+}

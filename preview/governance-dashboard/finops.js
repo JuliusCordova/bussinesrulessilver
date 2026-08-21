@@ -8,14 +8,23 @@
   const $ = (id) => document.getElementById(id);
   const int = (v) => new Intl.NumberFormat('es-PE').format(Number(v || 0));
   const ms = (v) => `${Math.round(Number(v || 0)).toLocaleString('es-PE')} ms`;
-  const usd = (v, currency = 'USD') => {
+  const money = (v, currency = 'USD') => {
     if (v == null || Number.isNaN(Number(v))) return 'No disponible';
-    return new Intl.NumberFormat('en-US', { style:'currency', currency: currency || 'USD', minimumFractionDigits:2, maximumFractionDigits:4 }).format(Number(v));
+    return new Intl.NumberFormat(currency === 'PEN' ? 'es-PE' : 'en-US', {
+      style:'currency',
+      currency: currency || 'USD',
+      minimumFractionDigits:2,
+      maximumFractionDigits:4,
+    }).format(Number(v));
   };
   const esc = (v) => String(v ?? '').replace(/[&<>'\"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '\"':'&quot;' }[c]));
   const shortDate = (value) => {
     const d = new Date(`${value}T12:00:00Z`);
     return Number.isNaN(d.getTime()) ? String(value || '') : new Intl.DateTimeFormat('es-PE', { day:'2-digit', month:'short' }).format(d);
+  };
+  const dateTimeLabel = (value) => {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? String(value || '') : new Intl.DateTimeFormat('es-PE', { day:'2-digit', month:'short', year:'numeric' }).format(d);
   };
   const agentLabel = (name) => String(name || 'sin-agente')
     .split('-')
@@ -63,17 +72,25 @@
   function renderServices(payload) {
     const root = $('finopsServiceCosts');
     if (!root) return;
-    if (!payload?.billing_cost_available) {
+    if (!payload?.billing_source_available) {
       root.innerHTML = '<div class="finops-empty"><strong>Esperando Cloud Billing Export</strong><span>La exportación detallada está habilitada, pero Google aún no materializó la tabla de costos.</span></div>';
+      return;
+    }
+    if (!payload?.billing_data_in_period) {
+      const coverage = payload.last_usage_at ? ` Último consumo materializado: ${dateTimeLabel(payload.last_usage_at)}.` : '';
+      root.innerHTML = `<div class="finops-empty"><strong>Billing activo · cobertura pendiente</strong><span>La tabla real existe, pero todavía no cubre el periodo seleccionado.${esc(coverage)}</span></div>`;
       return;
     }
     const rows = Array.isArray(payload.services) ? payload.services : [];
     if (!rows.length) {
-      root.innerHTML = '<div class="finops-empty">Billing Export disponible, pero no hay cargos para el proyecto en este periodo.</div>';
+      root.innerHTML = '<div class="finops-empty">Billing Export cubre el periodo, pero no hay cargos netos distintos de cero.</div>';
       return;
     }
     const max = Math.max(...rows.map((r)=>Math.abs(Number(r.cost_usd||0))), 0.000001);
-    root.innerHTML = rows.slice(0, 10).map((r)=>`<div class="finops-service-row"><div><strong>${esc(r.service || 'Servicio sin nombre')}</strong><span>${int(r.sku_count)} SKU · ${esc(r.currency || payload.currency || 'USD')}</span></div><div class="finops-service-bar"><i style="width:${Math.max(3,Math.abs(Number(r.cost_usd||0))*100/max)}%"></i></div><div class="finops-service-money"><b>${usd(r.cost_usd, r.currency || payload.currency)}</b><span>bruto ${usd(r.gross_cost_usd, r.currency || payload.currency)} · créditos ${usd(r.credits_usd, r.currency || payload.currency)}</span></div></div>`).join('');
+    root.innerHTML = rows.slice(0, 10).map((r)=>{
+      const billingCurrency = r.billing_currency || payload.billing_currency || 'PEN';
+      return `<div class="finops-service-row"><div><strong>${esc(r.service || 'Servicio sin nombre')}</strong><span>${int(r.sku_count)} SKU · facturado en ${esc(billingCurrency)}</span></div><div class="finops-service-bar"><i style="width:${Math.max(3,Math.abs(Number(r.cost_usd||0))*100/max)}%"></i></div><div class="finops-service-money"><b>${money(r.cost_usd, 'USD')}</b><span>neto ${money(r.net_cost_billing_currency, billingCurrency)} · bruto ${money(r.gross_cost_billing_currency, billingCurrency)} · créditos ${money(r.credits_billing_currency, billingCurrency)}</span></div></div>`;
+    }).join('');
   }
 
   function renderRuns(rows) {
@@ -110,18 +127,32 @@
       $('finopsTokens').textContent = int(summary.total_tokens);
       $('finopsRunsCount').textContent = int(summary.governed_runs);
       $('finopsLatency').textContent = ms(summary.avg_latency_ms);
-      $('finopsCost').textContent = summary.billing_cost_available && summary.cost_usd != null ? usd(summary.cost_usd, summary.currency) : 'No disponible';
-      $('finopsCostMeta').textContent = summary.billing_cost_available
-        ? `FACTURADO · Cloud Billing Export · ${summary.currency || 'USD'}`
-        : 'Esperando primera carga de Cloud Billing Export';
+      $('finopsCost').textContent = summary.billing_cost_available && summary.cost_usd != null ? money(summary.cost_usd, 'USD') : 'No disponible';
+      if (summary.billing_cost_available) {
+        $('finopsCostMeta').textContent = `FACTURADO · ${summary.billing_currency || 'moneda local'} → USD normalizado`;
+      } else if (summary.billing_source_available) {
+        $('finopsCostMeta').textContent = summary.last_usage_at
+          ? `Billing activo · cobertura materializada hasta ${dateTimeLabel(summary.last_usage_at)}`
+          : 'Billing activo · cobertura pendiente para el periodo';
+      } else {
+        $('finopsCostMeta').textContent = 'Esperando primera carga de Cloud Billing Export';
+      }
       $('finopsPeriodLabel').textContent = `Últimos ${period} días`;
       renderDaily(daily.series);
       renderAgents(agents.agents);
       renderServices(services);
       renderRuns(runs.runs);
       if (status) {
-        status.textContent = summary.billing_cost_available ? 'TELEMETRÍA + BILLING REAL' : 'TELEMETRÍA REAL · BILLING PENDIENTE';
-        status.className = summary.billing_cost_available ? 'finops-source-badge live' : 'finops-source-badge pending';
+        if (summary.billing_cost_available) {
+          status.textContent = 'TELEMETRÍA + BILLING REAL';
+          status.className = 'finops-source-badge live';
+        } else if (summary.billing_source_available) {
+          status.textContent = 'TELEMETRÍA REAL · BILLING EN BACKFILL';
+          status.className = 'finops-source-badge pending';
+        } else {
+          status.textContent = 'TELEMETRÍA REAL · BILLING PENDIENTE';
+          status.className = 'finops-source-badge pending';
+        }
       }
     } catch (error) {
       if (status) {

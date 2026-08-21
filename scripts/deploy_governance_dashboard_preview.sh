@@ -12,7 +12,7 @@ FINOPS_API_URL="${FINOPS_API_URL:-https://silver-refinement-agent-merge-test-mkq
 command -v gcloud >/dev/null
 command -v curl >/dev/null
 
-for file in Dockerfile index.html app.js styles.css finops.js finops.css theme-red.css spa.css router.js finops-polish.js; do
+for file in Dockerfile index.html app.js styles.css finops.js finops.css theme-red.css spa.css product-polish.css router.js finops-polish.js; do
   test -f "$PREVIEW_DIR/$file"
 done
 
@@ -123,24 +123,28 @@ PREVIEW_FINOPS_JS=/tmp/governance-preview-finops.js
 PREVIEW_ROUTER_JS=/tmp/governance-preview-router.js
 PREVIEW_FINOPS_POLISH_JS=/tmp/governance-preview-finops-polish.js
 PREVIEW_SPA_CSS=/tmp/governance-preview-spa.css
+PREVIEW_PRODUCT_POLISH_CSS=/tmp/governance-preview-product-polish.css
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/" -o "$PREVIEW_HTML"
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/app.js" -o "$PREVIEW_JS"
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/finops.js" -o "$PREVIEW_FINOPS_JS"
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/router.js" -o "$PREVIEW_ROUTER_JS"
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/finops-polish.js" -o "$PREVIEW_FINOPS_POLISH_JS"
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/spa.css" -o "$PREVIEW_SPA_CSS"
+curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/product-polish.css" -o "$PREVIEW_PRODUCT_POLISH_CSS"
 
 grep -Fq 'Gobierno DataOps — Business Rules Silver' "$PREVIEW_HTML"
 grep -Fq 'data-view-target="overview"' "$PREVIEW_HTML"
 grep -Fq 'data-view-target="finops"' "$PREVIEW_HTML"
+grep -Fq './product-polish.css' "$PREVIEW_HTML"
 grep -Fq '/agentops/governance/summary' "$PREVIEW_JS"
 grep -Fq '/agentops/finops/services' "$PREVIEW_FINOPS_JS"
 grep -Fq 'function show' "$PREVIEW_ROUTER_JS"
 grep -Fq '#view/' "$PREVIEW_ROUTER_JS"
 grep -Fq '/agentops/finops/product-attribution' "$PREVIEW_FINOPS_POLISH_JS"
 grep -Fq 'governance-view[hidden]' "$PREVIEW_SPA_CSS"
+grep -Fq 'finops-product-panel' "$PREVIEW_PRODUCT_POLISH_CSS"
 grep -Fq 'No disponible' "$PREVIEW_FINOPS_POLISH_JS"
-echo "PASS: preview desplegado contiene router SPA, CSS multi-vista y FinOps real"
+echo "PASS: preview desplegado contiene SPA, pulida ejecutiva y FinOps real"
 
 echo
 echo "[6/6] Preview listo"

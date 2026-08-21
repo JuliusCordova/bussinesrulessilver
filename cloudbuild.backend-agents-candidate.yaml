@@ -242,7 +242,7 @@ steps:
         assert status == 200, body
         assert finops_summary["billing_cost_available"] is False, finops_summary
         assert finops_summary["cost_usd"] is None, finops_summary
-        assert int(finops_summary["total_llm_calls"]) > 0, finops_summary
+        assert int(finops_summary["llm_calls"]) > 0, finops_summary
         assert int(finops_summary["total_tokens"]) > 0, finops_summary
 
         status, _, body = request("/agentops/finops/daily?days=30")
@@ -263,7 +263,7 @@ steps:
         assert status == 200, body
         assert finops_runs["billing_cost_available"] is False, finops_runs
         assert isinstance(finops_runs["runs"], list) and finops_runs["runs"], finops_runs
-        assert all(item.get("trace_id") for item in finops_runs["runs"]), finops_runs
+        assert all(item.get("run_id") for item in finops_runs["runs"]), finops_runs
 
         print(json.dumps({
             "health": health,
@@ -275,7 +275,7 @@ steps:
             "mapping_columns": len(mapped_sources),
             "seed_leak": False,
             "finops_candidate": True,
-            "finops_total_llm_calls": finops_summary["total_llm_calls"],
+            "finops_llm_calls": finops_summary["llm_calls"],
             "finops_total_tokens": finops_summary["total_tokens"],
             "finops_agents": sorted(observed_agents),
             "billing_cost_available": finops_summary["billing_cost_available"],

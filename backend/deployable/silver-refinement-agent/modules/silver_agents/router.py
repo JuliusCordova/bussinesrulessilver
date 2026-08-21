@@ -133,7 +133,12 @@ async def run_silver_agent(
         f"{request.target_dataset}.{request.target_table}"
     )
     try:
-        result = await SilverAgentRunner().run(factory(), request)
+        result = await SilverAgentRunner().run(
+            factory(),
+            request,
+            user_id=request.requested_by or "business-rules-silver",
+            trace_id=run_id,
+        )
         if agent_name in {"table-profiler", "mapping-advisor", "quality-rule-advisor"}:
             profile = profile_selected_table(
                 request.project_id,

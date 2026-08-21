@@ -16,7 +16,8 @@ steps:
         python -m compileall -q modules tests
         python -m pytest -q \
           tests/test_silver_agents.py \
-          tests/test_result_validator.py
+          tests/test_result_validator.py \
+          tests/test_finops_telemetry.py
 
   - id: build-candidate
     name: gcr.io/cloud-builders/docker
@@ -143,7 +144,8 @@ steps:
             "watermark_column": "bronze_fecha_ingesta",
             "business_rules": [],
             "approved_quality_rules": [],
-            "context": "Smoke test candidato Gemini ADK.",
+            "context": "Smoke test candidato Gemini ADK FinOps.",
+            "requested_by": "cloud-build-finops-candidate"
         }
         status, _, body = request(
             "/silver-agents/table-profiler/run",
@@ -236,6 +238,7 @@ steps:
             "profile_pdf_bytes": len(pdf),
             "mapping_columns": len(mapped_sources),
             "seed_leak": False,
+            "finops_candidate": True,
         }, ensure_ascii=False))
 
 images:

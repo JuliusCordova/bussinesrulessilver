@@ -33,6 +33,14 @@ grep -Fq '#view/' "$PREVIEW_DIR/router.js"
 grep -Fq "show(hashView()||'overview'" "$PREVIEW_DIR/router.js"
 grep -Fq 'spa-ready' "$PREVIEW_DIR/router.js"
 
+# Runtime safety: evitar loops de mutación que congelen la UI.
+if grep -Fq 'new MutationObserver' "$PREVIEW_DIR/router.js"; then
+  echo "FAIL: router.js no debe observar recursivamente todo el dashboard" >&2
+  exit 1
+fi
+grep -Fq 'scheduleSyncs' "$PREVIEW_DIR/router.js"
+grep -Fq 'if (target.textContent !== next)' "$PREVIEW_DIR/router.js"
+
 # FinOps real: atribución basada en contrato real, sin sustitutos sintéticos.
 grep -Fq 'product-attribution' "$PREVIEW_DIR/finops-polish.js"
 grep -Fq 'No disponible' "$PREVIEW_DIR/finops-polish.js"
@@ -42,4 +50,5 @@ grep -Fq 'governance-view[hidden]' "$PREVIEW_DIR/spa.css"
 
 echo "PASS: navegación explícita por vistas y hash routing presentes"
 echo "PASS: una sola vista queda visible mediante hidden/display:none"
+echo "PASS: router sin observer recursivo ni freeze de render"
 echo "PASS: FinOps conserva costo real y No disponible sin evidencia"

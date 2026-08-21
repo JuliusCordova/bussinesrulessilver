@@ -45,20 +45,20 @@ PY
 done
 
 printf '[3/5] Volumen y rango temporal de fact_llm_calls...\n'
-QUERY="SELECT COUNT(*) AS row_count FROM \\`$PROJECT_ID.agentops.fact_llm_calls\\`"
+QUERY="SELECT COUNT(*) AS row_count, MIN(call_ts) AS first_call_ts, MAX(call_ts) AS last_call_ts FROM \`$PROJECT_ID.agentops.fact_llm_calls\`"
 bq query --project_id="$PROJECT_ID" --use_legacy_sql=false --format=prettyjson "$QUERY" \
-  >"$OUT/fact_llm_calls-count.json" 2>"$OUT/fact_llm_calls-count.err" || true
-cat "$OUT/fact_llm_calls-count.json" 2>/dev/null || true
+  >"$OUT/fact_llm_calls-volume.json" 2>"$OUT/fact_llm_calls-volume.err" || true
+cat "$OUT/fact_llm_calls-volume.json" 2>/dev/null || true
 
 printf '\n[4/5] Muestra segura de vw_llm_usage_summary...\n'
-bq query --project_id="$PROJECT_ID" --use_legacy_sql=false --max_rows=10 --format=prettyjson \
-  "SELECT * FROM \\`$PROJECT_ID.agentops.vw_llm_usage_summary\\` LIMIT 10" \
+QUERY="SELECT * FROM \`$PROJECT_ID.agentops.vw_llm_usage_summary\` ORDER BY call_date DESC, agent_name LIMIT 10"
+bq query --project_id="$PROJECT_ID" --use_legacy_sql=false --max_rows=10 --format=prettyjson "$QUERY" \
   >"$OUT/vw_llm_usage_summary-sample.json" 2>"$OUT/vw_llm_usage_summary-sample.err" || true
 cat "$OUT/vw_llm_usage_summary-sample.json" 2>/dev/null || true
 
 printf '\n[5/5] Muestra segura de vw_tool_usage...\n'
-bq query --project_id="$PROJECT_ID" --use_legacy_sql=false --max_rows=10 --format=prettyjson \
-  "SELECT * FROM \\`$PROJECT_ID.agentops.vw_tool_usage\\` LIMIT 10" \
+QUERY="SELECT * FROM \`$PROJECT_ID.agentops.vw_tool_usage\` ORDER BY calls DESC, tool_name LIMIT 10"
+bq query --project_id="$PROJECT_ID" --use_legacy_sql=false --max_rows=10 --format=prettyjson "$QUERY" \
   >"$OUT/vw_tool_usage-sample.json" 2>"$OUT/vw_tool_usage-sample.err" || true
 cat "$OUT/vw_tool_usage-sample.json" 2>/dev/null || true
 

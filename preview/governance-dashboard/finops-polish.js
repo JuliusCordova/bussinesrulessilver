@@ -22,7 +22,6 @@
   };
 
   let refreshTimer = null;
-  let observing = false;
 
   async function getProduct(days) {
     const response = await fetch(`${API_BASE}/agentops/finops/product-attribution?days=${days}`, { headers: { Accept: 'application/json' } });
@@ -37,14 +36,24 @@
     if (!panel) {
       panel = document.createElement('article');
       panel.id = 'finopsProductAttribution';
-      panel.className = 'finops-panel';
-      const runs = $('finopsRuns')?.closest('.finops-panel');
-      if (runs) finops.insertBefore(panel, runs);
-      else finops.appendChild(panel);
+      panel.className = 'finops-panel finops-product-panel';
     }
+
+    const firstGrid = finops.querySelector('.finops-grid');
+    if (firstGrid && panel.parentElement !== finops) finops.insertBefore(panel, firstGrid);
+    else if (firstGrid && panel.nextElementSibling !== firstGrid) finops.insertBefore(panel, firstGrid);
+    else if (!panel.parentElement) finops.appendChild(panel);
+
     if (!$('finopsProductState') || !$('finopsProductAttributionBody')) {
       panel.innerHTML = `
-        <div class="panel-header compact"><div><h3>Costo por producto · Business Rules Silver</h3><p>Atribución gobernada con Billing real + evidencia AgentOps. Sin estimaciones sintéticas.</p></div><span id="finopsProductState" class="soft-badge">Consultando…</span></div>
+        <div class="panel-header compact product-panel-header">
+          <div>
+            <span class="product-panel-kicker">FINOPS POR PRODUCTO</span>
+            <h3>Costo por producto · Business Rules Silver</h3>
+            <p>Atribución gobernada con Billing real + evidencia AgentOps. Sin estimaciones sintéticas.</p>
+          </div>
+          <span id="finopsProductState" class="soft-badge">Consultando…</span>
+        </div>
         <div id="finopsProductAttributionBody" class="product-attribution-shell"><div class="finops-empty">Consultando atribución real del producto…</div></div>`;
     }
     return panel;
@@ -66,27 +75,31 @@
     const silverFirst = dateLabel(payload?.silver_first_call_at);
 
     stateBadge.textContent = statusText;
-    stateBadge.className = `soft-badge ${waiting ? 'pending' : ''}`;
+    stateBadge.className = `soft-badge ${waiting ? 'pending' : 'live'}`;
     body.className = 'product-attribution-shell';
     body.innerHTML = `
       <div class="product-attribution-kpis">
-        <div class="product-cost-card ${payload?.product_cost_usd == null ? 'pending' : ''}"><span>Costo producto</span><strong id="finopsProductCostValue">${productCost}</strong><small>${payload?.product_cost_usd == null ? 'Atribución pendiente' : 'Costo atribuido Silver'}</small></div>
+        <div class="product-cost-card primary ${payload?.product_cost_usd == null ? 'pending' : ''}"><span>Costo producto</span><strong id="finopsProductCostValue">${productCost}</strong><small>${payload?.product_cost_usd == null ? 'Atribución pendiente' : 'Costo atribuido Silver'}</small></div>
         <div class="product-cost-card"><span>Costo directo</span><strong>${directCost}</strong><small>Recursos identificables con evidencia alta</small></div>
         <div class="product-cost-card"><span>Costo IA atribuido</span><strong>${aiCost}</strong><small>Solo con overlap temporal validado</small></div>
         <div class="product-cost-card"><span>Cobertura</span><strong>${coverage.toFixed(1)}%</strong><small>Billing vs AgentOps</small></div>
         <div class="product-cost-card ${waiting ? 'pending' : ''}"><span>Confianza</span><strong>${payload?.confidence || 'PENDING'}</strong><small>${payload?.temporal_overlap ? 'Solapamiento disponible' : 'Sin solapamiento temporal'}</small></div>
       </div>
-      <div class="product-attribution-status">
-        <div class="status-icon">◴</div>
+      <div class="product-attribution-status ${waiting ? 'pending' : 'ready'}">
+        <div class="status-icon">${waiting ? '◴' : '✓'}</div>
         <div><strong>${waiting ? 'Atribución pendiente por cobertura temporal' : statusText}</strong><span>Billing disponible hasta ${billingLast} · AgentOps Silver desde ${silverFirst} · ${payload?.temporal_overlap ? 'periodos solapados' : 'sin overlap temporal'}.</span></div>
       </div>
-      <div class="product-telemetry-strip">
-        <span><b>${int(payload?.silver_llm_calls)}</b> llamadas LLM</span>
-        <span>·</span><span><b>${int(payload?.silver_governed_runs)}</b> runs</span>
-        <span>·</span><span><b>${int(payload?.silver_tokens)}</b> tokens</span>
-        <span>·</span><span><b>${payload?.billing_source_available ? 'Billing real' : 'Billing pendiente'}</b> fuente</span>
-      </div>
-      <div class="coverage-line"><span>0%</span><div class="coverage-track ${coverage > 0 ? 'live' : ''}"><i style="width:${Math.max(0, Math.min(100, coverage))}%"></i></div><span>100%</span></div>`;
+      <div class="product-evidence-row">
+        <div class="product-telemetry-strip">
+          <span><b>${int(payload?.silver_llm_calls)}</b> llamadas LLM</span>
+          <span>·</span><span><b>${int(payload?.silver_governed_runs)}</b> runs</span>
+          <span>·</span><span><b>${int(payload?.silver_tokens)}</b> tokens</span>
+          <span>·</span><span><b>${payload?.billing_source_available ? 'Billing real' : 'Billing pendiente'}</b> fuente</span>
+        </div>
+        <div class="coverage-line"><span>0%</span><div class="coverage-track ${coverage > 0 ? 'live' : ''}"><i style="width:${Math.max(0, Math.min(100, coverage))}%"></i></div><span>100%</span></div>
+      </div>`;
+
+    window.dispatchEvent(new CustomEvent('finops:product-rendered', { detail: payload }));
   }
 
   async function refresh() {
@@ -97,7 +110,10 @@
       ensurePanel();
       const stateBadge = $('finopsProductState');
       const body = $('finopsProductAttributionBody');
-      if (stateBadge) stateBadge.textContent = 'No disponible';
+      if (stateBadge) {
+        stateBadge.textContent = 'No disponible';
+        stateBadge.className = 'soft-badge pending';
+      }
       if (body) body.innerHTML = '<div class="finops-empty"><strong>Atribución no disponible</strong><span>No fue posible consultar el contrato real por producto.</span></div>';
       console.error('FinOps product polish:', error);
     }
@@ -108,21 +124,8 @@
     refreshTimer = setTimeout(refresh, delay);
   }
 
-  function watchLegacyRender() {
-    if (observing) return;
-    const panel = ensurePanel();
-    if (!panel) return;
-    observing = true;
-    const observer = new MutationObserver(() => {
-      const body = $('finopsProductAttributionBody');
-      if (body?.querySelector('.finops-semantics')) scheduleRefresh(30);
-    });
-    observer.observe(panel, { childList: true, subtree: true });
-  }
-
   window.addEventListener('DOMContentLoaded', () => {
     ensurePanel();
-    watchLegacyRender();
     scheduleRefresh(250);
     $('periodSelect')?.addEventListener('change', () => scheduleRefresh(250));
     $('refreshButton')?.addEventListener('click', () => scheduleRefresh(350));

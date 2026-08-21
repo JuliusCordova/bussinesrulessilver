@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from .finops_product_attribution import SilverProductAttributionRepository
 from .finops_repository import SilverFinOpsRepository
 
 
@@ -10,6 +11,10 @@ router = APIRouter(prefix="/agentops/finops", tags=["agentops-finops"])
 
 def get_finops_repository() -> SilverFinOpsRepository:
     return SilverFinOpsRepository()
+
+
+def get_product_attribution_repository() -> SilverProductAttributionRepository:
+    return SilverProductAttributionRepository()
 
 
 @router.get("/summary")
@@ -99,4 +104,19 @@ def get_finops_services(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"No fue posible obtener costos facturados por servicio: {exc}",
+        ) from exc
+
+
+@router.get("/product-attribution")
+def get_finops_product_attribution(
+    days: int = Query(default=30, ge=1, le=365),
+    repository: SilverProductAttributionRepository = Depends(get_product_attribution_repository),
+) -> dict:
+    """Return product-level cost attribution with coverage and confidence semantics."""
+    try:
+        return repository.fetch_product_attribution(days=days)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No fue posible obtener atribución FinOps del producto: {exc}",
         ) from exc

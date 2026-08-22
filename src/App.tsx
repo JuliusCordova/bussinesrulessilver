@@ -1056,6 +1056,8 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
                   ...current,
                   ...workflowPatchFromRecord(reviewed),
                   specId: specified.spec_id ?? reviewed.spec_id ?? current.specId,
+                  approvedQualityRules: reviewed.quality_rules ?? [],
+                  qualityRulesVersion: reviewed.quality_rules_version ?? current.qualityRulesVersion,
                   qualityReviewed: true,
                   qualityReviewDecision: 'APPROVED',
                   activeStep: 'artifacts',
@@ -1082,6 +1084,11 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
                 }
                 if (!workflow.specId) throw new Error('Quality Review no devolvio spec_id.');
                 const contract = buildArtifactContract(workflow);
+                const governedRules = workflow.approvedQualityRules ?? [];
+                const notApproved = governedRules.filter((rule) => rule.status !== 'APPROVED');
+                if (notApproved.length) {
+                  throw new Error('El package solo puede ejecutarse con reglas de calidad APPROVED.');
+                }
                 const pkg = await silverApi.generateArtifacts(workflow.specId, {
                   mapping_version: workflow.mappingVersion ?? 1,
                   target_project: workflow.projectId ?? seedSource.projectId,
@@ -1098,7 +1105,7 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
                   source_dataset: workflow.sourceDataset ?? seedSource.sourceDataset,
                   source_table: workflow.sourceTable ?? seedSource.sourceTable,
                   generated_by: REQUESTED_BY,
-                  quality_rules: contract.qualityRules,
+                  quality_rules: governedRules.length ? governedRules : contract.qualityRules,
                 });
                 const execution = await silverApi.createExecution({
                   spec_id: pkg.spec_id,

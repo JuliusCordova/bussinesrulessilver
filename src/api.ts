@@ -278,7 +278,7 @@ export interface SilverWorkflowRecord {
   mapping_rules?: Array<Record<string, unknown>>;
   mapping_version?: number | null;
   silver_target?: SilverTargetReference | null;
-  quality_rules?: Array<Record<string, unknown>>;
+  quality_rules?: GovernedQualityRule[];
   quality_rules_version?: number | null;
   quality_review?: Record<string, unknown> | null;
   artifact_package?: Record<string, unknown> | null;

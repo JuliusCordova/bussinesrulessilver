@@ -16,7 +16,7 @@ from .execution_artifact_generator import ExecutionArtifactGeneratorService
 
 
 class ArtifactPackageGeneratorService:
-    template_version = "1.2.0"
+    template_version = "1.3.0"
 
     @staticmethod
     def _digest(content: str) -> str:
@@ -140,9 +140,10 @@ class ArtifactPackageGeneratorService:
             "## Execution\n"
             "The generated PySpark script is designed for Dataproc Serverless "
             "with the Spark BigQuery connector. Governed quality validation runs "
-            "before the target table is written. Blocking failures prevent the "
-            "Silver write and persist failing row evidence in `<target>__quarantine`; "
-            "warnings remain non-blocking and are exposed in the structured result.\n"
+            "before the target table is written. Runtime actions are enforced exactly: "
+            "OBSERVE_ONLY records evidence, WARN continues, QUARANTINE excludes failing "
+            "rows from Silver and persists them in `<target>__quarantine`, and BLOCK_LOAD "
+            "prevents the Silver write.\n"
         )
 
         generated_at = datetime.now(timezone.utc).isoformat()

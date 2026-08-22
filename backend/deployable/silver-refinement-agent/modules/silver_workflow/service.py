@@ -14,6 +14,8 @@ from .models import (
     ConfirmWorkflowSourceRequest,
     CreateSilverWorkflowRequest,
     GenerateBusinessRulesRequest,
+    MappingImpactRequest,
+    MappingImpactResponse,
     ReviewQualityRequest,
     SaveBusinessRulesDraftRequest,
     SaveSilverMappingRequest,
@@ -169,6 +171,89 @@ class SilverWorkflowService:
             confirmed_by=request.confirmed_by, confirmation_reason=request.confirmation_reason,
             updated_at=confirmed_at,
         ))
+
+    @staticmethod
+    def _mapping_shape(raw: dict[str, object]) -> dict[str, object]:
+        return {
+            "name": raw.get("name") or raw.get("target_column"),
+            "data_type": raw.get("data_type") or raw.get("target_type"),
+            "nullable": raw.get("nullable", True),
+            "source_column": raw.get("source_column") or raw.get("sourceColumn"),
+            "transformation": raw.get("transformation") or raw.get("transformation_type") or raw.get("transformationType"),
+        }
+
+    @staticmethod
+    def _quality_rule_columns(rule: dict[str, object]) -> set[str]:
+        columns: set[str] = set()
+        for key in ("column_name", "column", "columns", "source_columns", "target_columns"):
+            value = rule.get(key)
+            if isinstance(value, str) and value:
+                columns.add(value)
+            elif isinstance(value, list):
+                columns.update(str(item) for item in value if item)
+        return columns
+
+    def analyze_mapping_impact(self, workflow_id: str, request: MappingImpactRequest) -> MappingImpactResponse:
+        current = self._require_version(workflow_id, request.expected_version)
+        if not current.source_confirmed or current.schema_context is None:
+            raise WorkflowStateConflictError("La fuente y el esquema deben estar confirmados antes de analizar el mapping")
+
+        previous: dict[str, dict[str, object]] = {}
+        for raw in current.mapping_rules:
+            shape = self._mapping_shape(raw)
+            if shape.get("name"):
+                previous[str(shape["name"])] = shape
+        proposed = {
+            column.name: self._mapping_shape(column.model_dump(mode="json"))
+            for column in request.columns
+        }
+
+        added = sorted(set(proposed) - set(previous))
+        removed = sorted(set(previous) - set(proposed))
+        modified = sorted(
+            name for name in set(previous) & set(proposed)
+            if previous[name] != proposed[name]
+        )
+        changed_columns = set(added) | set(removed) | set(modified)
+
+        affected_rules: list[str] = []
+        for rule in current.quality_rules:
+            if isinstance(rule, dict) and self._quality_rule_columns(rule) & changed_columns:
+                affected_rules.append(str(rule.get("rule_name") or rule.get("name") or "regla_sin_nombre"))
+
+        has_changes = bool(changed_columns)
+        invalidations = [
+            "SPECIFICATION", "QUALITY_REVIEW", "ARTIFACT_PACKAGE",
+            "GOVERNANCE", "EXECUTION", "VALIDATION",
+        ] if has_changes else []
+        if removed or affected_rules:
+            impact_level = "HIGH"
+        elif modified:
+            impact_level = "MEDIUM"
+        elif added:
+            impact_level = "LOW"
+        else:
+            impact_level = "NONE"
+
+        summary = (
+            f"{len(added)} agregadas, {len(removed)} eliminadas, {len(modified)} modificadas; "
+            f"{len(affected_rules)} reglas de calidad afectadas."
+            if has_changes else "No se detectaron cambios materiales frente al mapping persistido."
+        )
+        return MappingImpactResponse(
+            workflow_id=workflow_id,
+            current_workflow_version=current.version,
+            current_mapping_version=current.mapping_version,
+            proposed_mapping_version=(current.mapping_version or 0) + 1,
+            impact_level=impact_level,
+            has_changes=has_changes,
+            added_columns=added,
+            removed_columns=removed,
+            modified_columns=modified,
+            affected_quality_rules=sorted(set(affected_rules)),
+            downstream_invalidations=invalidations,
+            summary=summary,
+        )
 
     def save_mapping_version(self, workflow_id: str, request: SaveSilverMappingRequest) -> SilverWorkflowRecord:
         current = self._require_version(workflow_id, request.expected_version)

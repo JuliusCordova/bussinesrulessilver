@@ -15,6 +15,8 @@ from .models import (
     ConfirmWorkflowSourceRequest,
     CreateSilverWorkflowRequest,
     GenerateBusinessRulesRequest,
+    MappingImpactRequest,
+    MappingImpactResponse,
     ReviewQualityRequest,
     SaveBusinessRulesDraftRequest,
     SaveSilverMappingRequest,
@@ -139,6 +141,20 @@ def confirm_workflow_business_rules(workflow_id: str, request: ConfirmBusinessRu
     except (WorkflowVersionConflictError, WorkflowStateConflictError) as exc:
         raise _conflict(exc) from exc
     except BusinessRuleValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
+
+@router.post("/{workflow_id}/mapping/impact", response_model=MappingImpactResponse)
+def analyze_workflow_mapping_impact(workflow_id: str, request: MappingImpactRequest, business: WorkflowBusinessOperation = Depends(require_workflow_mapping)) -> MappingImpactResponse:
+    try:
+        result = business.workflow_service.analyze_mapping_impact(workflow_id, request)
+        business.record_success(workflow_id=workflow_id)
+        return result
+    except WorkflowNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except (WorkflowVersionConflictError, WorkflowStateConflictError) as exc:
+        raise _conflict(exc) from exc
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
 

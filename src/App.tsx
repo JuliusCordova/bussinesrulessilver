@@ -7,6 +7,7 @@ import {
   type AgentOpsDashboard,
   type AgentOpsHealth,
   type CatalogTableDetail,
+  type MappingImpactResponse,
   type SilverAgentDescriptor,
   type SilverAgentRunRequest,
   type SilverWorkflowRecord,
@@ -441,6 +442,8 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
     },
   );
   const [showDataprocConfirm, setShowDataprocConfirm] = useState(false);
+  const [mappingImpact, setMappingImpact] = useState<MappingImpactResponse>();
+  const [mappingImpactFingerprint, setMappingImpactFingerprint] = useState<string>();
 
   const activeIndex = stepOrder.indexOf(workflow.activeStep);
   const activeStep = steps[activeIndex];
@@ -711,7 +714,10 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
                 }));
               });
             }}
+            impactAnalysis={mappingImpact}
             onMappingChange={(rules) => {
+              setMappingImpact(undefined);
+              setMappingImpactFingerprint(undefined);
               setWorkflow((current) => ({
                 ...current,
                 mappingRules: rules,
@@ -733,25 +739,43 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
                 return;
               }
               if (workflow.resumedFromBackend && workflow.workflowId) {
-                await runAction('Persistiendo nueva versión gobernada del mapping...', async () => {
-                  const includedRules = rules.filter((rule) => rule.include);
-                  const updated = await silverApi.saveMapping(workflow.workflowId!, {
-                    expected_version: currentVersion(workflow),
-                    target: {
-                      project_id: workflow.projectId ?? seedSource.projectId,
-                      dataset_id: workflow.targetDataset ?? seedSource.targetDataset,
-                      table_id: workflow.targetTable ?? seedSource.targetTable,
-                    },
-                    columns: includedRules.map((rule) => ({
-                      name: rule.targetColumn,
-                      data_type: rule.targetType,
-                      nullable: rule.nullable,
-                      source_column: rule.sourceColumn || null,
-                      transformation: toBackendTransformation(rule.transformationType),
-                    })),
-                    edited_by: REQUESTED_BY,
-                    change_reason: 'Mapping editado desde Procesos Silver; downstream requiere revalidación.',
+                const includedRules = rules.filter((rule) => rule.include);
+                const payload = {
+                  expected_version: currentVersion(workflow),
+                  target: {
+                    project_id: workflow.projectId ?? seedSource.projectId,
+                    dataset_id: workflow.targetDataset ?? seedSource.targetDataset,
+                    table_id: workflow.targetTable ?? seedSource.targetTable,
+                  },
+                  columns: includedRules.map((rule) => ({
+                    name: rule.targetColumn,
+                    data_type: rule.targetType,
+                    nullable: rule.nullable,
+                    source_column: rule.sourceColumn || null,
+                    transformation: toBackendTransformation(rule.transformationType),
+                  })),
+                };
+                const fingerprint = JSON.stringify(payload);
+                if (!mappingImpact || mappingImpactFingerprint !== fingerprint) {
+                  await runAction('Analizando impacto del cambio de mapping...', async () => {
+                    const impact = await silverApi.analyzeMappingImpact(workflow.workflowId!, payload);
+                    setMappingImpact(impact);
+                    setMappingImpactFingerprint(fingerprint);
                   });
+                  return;
+                }
+                if (!mappingImpact.has_changes) {
+                  applyError(new Error('No se detectaron cambios materiales frente al mapping persistido.'));
+                  return;
+                }
+                await runAction('Persistiendo nueva versión gobernada del mapping...', async () => {
+                  const updated = await silverApi.saveMapping(workflow.workflowId!, {
+                    ...payload,
+                    edited_by: REQUESTED_BY,
+                    change_reason: `Impact Analysis ${mappingImpact.impact_level}: ${mappingImpact.summary}`,
+                  });
+                  setMappingImpact(undefined);
+                  setMappingImpactFingerprint(undefined);
                   setWorkflow((current) => ({
                     ...current,
                     ...workflowPatchFromRecord(updated),
@@ -1672,12 +1696,14 @@ function MappingStep({
   onGenerateDeterministic,
   onGenerateAgent,
   onMappingChange,
+  impactAnalysis,
   onNext,
 }: {
   workflow: WorkflowState;
   onGenerateDeterministic: () => void;
   onGenerateAgent: () => void;
   onMappingChange: (rules: MappingRule[]) => void;
+  impactAnalysis?: MappingImpactResponse;
   onNext: () => void;
 }) {
   const sourceColumns = workflow.sourceColumns ?? [];
@@ -1795,6 +1821,17 @@ function MappingStep({
         ))}
       </div>
 
+      {impactAnalysis && (
+        <div className="validationBox">
+          <strong>Impact Analysis · {impactAnalysis.impact_level}</strong>
+          <span>{impactAnalysis.summary}</span>
+          <small>Agregadas: {impactAnalysis.added_columns.join(', ') || 'Ninguna'}</small>
+          <small>Eliminadas: {impactAnalysis.removed_columns.join(', ') || 'Ninguna'}</small>
+          <small>Modificadas: {impactAnalysis.modified_columns.join(', ') || 'Ninguna'}</small>
+          <small>Reglas afectadas: {impactAnalysis.affected_quality_rules.join(', ') || 'Ninguna'}</small>
+          <small>Se regenerará: {impactAnalysis.downstream_invalidations.join(', ') || 'Nada'}</small>
+        </div>
+      )}
       <div className="actions">
         <button onClick={addRow}>Agregar mapping</button>
       </div>
@@ -1803,7 +1840,7 @@ function MappingStep({
         {workflow.projectId ?? seedSource.projectId}.{workflow.targetDataset ?? seedSource.targetDataset}.
         {workflow.targetTable ?? seedSource.targetTable}
       </p>
-      <button className="primary" onClick={onNext}>Guardar mapping aprobado</button>
+      <button className="primary" onClick={onNext}>{impactAnalysis?.has_changes ? `Confirmar nueva versión v${impactAnalysis.proposed_mapping_version}` : workflow.resumedFromBackend ? 'Analizar impacto' : 'Guardar mapping aprobado'}</button>
     </section>
   );
 }

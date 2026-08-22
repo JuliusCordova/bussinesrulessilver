@@ -249,6 +249,34 @@ class SaveSilverSpecificationRequest(BaseModel):
         return self
 
 
+class MappingImpactRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    target: SilverTargetReference
+    columns: list[SilverMappingColumn] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_unique_target_columns(self) -> "MappingImpactRequest":
+        names = [column.name for column in self.columns]
+        if len(names) != len(set(names)):
+            raise ValueError("Cada columna destino Silver debe tener un nombre único")
+        return self
+
+
+class MappingImpactResponse(BaseModel):
+    workflow_id: str
+    current_workflow_version: int = Field(ge=1)
+    current_mapping_version: int | None = Field(default=None, ge=1)
+    proposed_mapping_version: int = Field(ge=1)
+    impact_level: str
+    has_changes: bool
+    added_columns: list[str] = Field(default_factory=list)
+    removed_columns: list[str] = Field(default_factory=list)
+    modified_columns: list[str] = Field(default_factory=list)
+    affected_quality_rules: list[str] = Field(default_factory=list)
+    downstream_invalidations: list[str] = Field(default_factory=list)
+    summary: str
+
+
 class SaveSilverMappingRequest(BaseModel):
     expected_version: int = Field(ge=1)
     target: SilverTargetReference

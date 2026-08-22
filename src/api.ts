@@ -84,6 +84,12 @@ export const silverApi = {
       body: JSON.stringify(payload),
     }),
 
+  analyzeMappingImpact: (workflowId: string, payload: unknown) =>
+    request<MappingImpactResponse>(`/silver-workflows/${workflowId}/mapping/impact`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   saveMapping: (workflowId: string, payload: unknown) =>
     request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}/mapping`, {
       method: 'PUT',
@@ -310,6 +316,21 @@ export interface SilverWorkflowVersionListResponse {
   current_version: number;
   total: number;
   versions: SilverWorkflowVersionSummary[];
+}
+
+export interface MappingImpactResponse {
+  workflow_id: string;
+  current_workflow_version: number;
+  current_mapping_version?: number | null;
+  proposed_mapping_version: number;
+  impact_level: 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | string;
+  has_changes: boolean;
+  added_columns: string[];
+  removed_columns: string[];
+  modified_columns: string[];
+  affected_quality_rules: string[];
+  downstream_invalidations: string[];
+  summary: string;
 }
 
 export interface MappingRecommendationResponse {

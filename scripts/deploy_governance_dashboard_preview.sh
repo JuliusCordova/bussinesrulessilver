@@ -12,7 +12,7 @@ FINOPS_API_URL="${FINOPS_API_URL:-https://silver-refinement-agent-merge-test-mkq
 command -v gcloud >/dev/null
 command -v curl >/dev/null
 
-for file in Dockerfile index.html app.js styles.css finops.js finops.css theme-red.css spa.css product-polish.css router.js finops-polish.js; do
+for file in Dockerfile index.html app.js styles.css finops.js finops.css theme-red.css spa.css product-polish.css router.js finops-polish.js quality.js quality.css; do
   test -f "$PREVIEW_DIR/$file"
 done
 
@@ -30,6 +30,7 @@ if command -v node >/dev/null 2>&1; then
   node --check "$PREVIEW_DIR/finops.js"
   node --check "$PREVIEW_DIR/router.js"
   node --check "$PREVIEW_DIR/finops-polish.js"
+  node --check "$PREVIEW_DIR/quality.js"
 fi
 bash "$ROOT_DIR/scripts/validate_governance_preview_spa.sh"
 grep -Fq 'detailDrawer' "$PREVIEW_DIR/index.html"
@@ -124,6 +125,8 @@ PREVIEW_ROUTER_JS=/tmp/governance-preview-router.js
 PREVIEW_FINOPS_POLISH_JS=/tmp/governance-preview-finops-polish.js
 PREVIEW_SPA_CSS=/tmp/governance-preview-spa.css
 PREVIEW_PRODUCT_POLISH_CSS=/tmp/governance-preview-product-polish.css
+PREVIEW_QUALITY_JS=/tmp/governance-preview-quality.js
+PREVIEW_QUALITY_CSS=/tmp/governance-preview-quality.css
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/" -o "$PREVIEW_HTML"
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/app.js" -o "$PREVIEW_JS"
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/finops.js" -o "$PREVIEW_FINOPS_JS"
@@ -131,10 +134,14 @@ curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/router.js" -o "$PREVIEW_ROUTER
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/finops-polish.js" -o "$PREVIEW_FINOPS_POLISH_JS"
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/spa.css" -o "$PREVIEW_SPA_CSS"
 curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/product-polish.css" -o "$PREVIEW_PRODUCT_POLISH_CSS"
+curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/quality.js" -o "$PREVIEW_QUALITY_JS"
+curl -fsS --retry 3 --retry-delay 1 "$PREVIEW_URL/quality.css" -o "$PREVIEW_QUALITY_CSS"
 
 grep -Fq 'Gobierno DataOps — Business Rules Silver' "$PREVIEW_HTML"
 grep -Fq 'data-view-target="overview"' "$PREVIEW_HTML"
 grep -Fq 'data-view-target="finops"' "$PREVIEW_HTML"
+grep -Fq 'data-view-target="quality"' "$PREVIEW_HTML"
+grep -Fq './quality.css' "$PREVIEW_HTML"
 grep -Fq './product-polish.css' "$PREVIEW_HTML"
 grep -Fq '/agentops/governance/summary' "$PREVIEW_JS"
 grep -Fq '/agentops/finops/services' "$PREVIEW_FINOPS_JS"
@@ -143,6 +150,9 @@ grep -Fq '#view/' "$PREVIEW_ROUTER_JS"
 grep -Fq '/agentops/finops/product-attribution' "$PREVIEW_FINOPS_POLISH_JS"
 grep -Fq 'governance-view[hidden]' "$PREVIEW_SPA_CSS"
 grep -Fq 'finops-product-panel' "$PREVIEW_PRODUCT_POLISH_CSS"
+grep -Fq '/silver-workflows?limit=50' "$PREVIEW_QUALITY_JS"
+grep -Fq 'BLOCK_LOAD' "$PREVIEW_QUALITY_JS"
+grep -Fq '.quality-section' "$PREVIEW_QUALITY_CSS"
 grep -Fq 'No disponible' "$PREVIEW_FINOPS_POLISH_JS"
 echo "PASS: preview desplegado contiene SPA, pulida ejecutiva y FinOps real"
 
@@ -152,6 +162,7 @@ echo "========================================================"
 echo "PREVIEW_URL=$PREVIEW_URL"
 echo "OVERVIEW_URL=$PREVIEW_URL/#view/overview"
 echo "FINOPS_URL=$PREVIEW_URL/#view/finops"
+echo "QUALITY_URL=$PREVIEW_URL/#view/quality"
 echo "DEEP_LINK_FORMAT=$PREVIEW_URL/#run/<run_id>"
 echo "BACKEND_URL=$EXPECTED_BACKEND_URL"
 echo "FINOPS_API_URL=$FINOPS_API_URL"

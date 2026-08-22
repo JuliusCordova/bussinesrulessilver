@@ -379,7 +379,13 @@ def validate_derived_nl_mapping_proposal(
     symbol = {"ADD": "+", "SUBTRACT": "-", "MULTIPLY": "*", "DIVIDE": "/"}.get(
         str(transformation.parameters.get("operator") or "").upper()
     )
-    if transformation.type == TransformationType.ARITHMETIC and len(source_columns) == 2 and symbol:
+    scalar = transformation.parameters.get("scalar")
+    if transformation.type == TransformationType.ARITHMETIC and len(source_columns) == 1 and symbol and scalar is not None:
+        interpretation = (
+            f"Entendí tu regla así: {target_column} = "
+            f"{source_columns[0]} {symbol} {scalar}."
+        )
+    elif transformation.type == TransformationType.ARITHMETIC and len(source_columns) == 2 and symbol:
         interpretation = (
             f"Entendí tu regla así: {target_column} = "
             f"{source_columns[0]} {symbol} {source_columns[1]}."

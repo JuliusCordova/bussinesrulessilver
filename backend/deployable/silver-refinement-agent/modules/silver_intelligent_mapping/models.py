@@ -55,8 +55,15 @@ class MappingTransformation(BaseModel):
             operator = str(self.parameters.get("operator") or "").upper()
             if operator not in {"ADD", "SUBTRACT", "MULTIPLY", "DIVIDE"}:
                 raise ValueError("ARITHMETIC requiere operator ADD, SUBTRACT, MULTIPLY o DIVIDE")
-            if len(self.source_columns) != 2:
-                raise ValueError("ARITHMETIC requiere exactamente dos source_columns")
+            scalar = self.parameters.get("scalar")
+            has_scalar = scalar is not None
+            if has_scalar and (isinstance(scalar, bool) or not isinstance(scalar, (int, float))):
+                raise ValueError("ARITHMETIC parameters.scalar debe ser numérico")
+            if has_scalar:
+                if len(self.source_columns) != 1:
+                    raise ValueError("ARITHMETIC con scalar requiere exactamente un source_column")
+            elif len(self.source_columns) != 2:
+                raise ValueError("ARITHMETIC requiere dos source_columns o un source_column más parameters.scalar")
         return self
 
 

@@ -758,9 +758,18 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
                 return;
               }
               await runAction('Interpretando regla natural con mapping-advisor...', async () => {
+                const schemaHint = (workflow.sourceColumns ?? [])
+                  .map((column) => `${column.name}:${column.type}`)
+                  .join(', ');
                 const request = {
                   ...buildAgentRequest(workflow),
-                  context: `DERIVED_NL:${naturalRule}`,
+                  context: [
+                    `DERIVED_NL:${naturalRule}`,
+                    `SCHEMA=${schemaHint}`,
+                    'CONTRATO_OBLIGATORIO=target_column,target_type,transformation.type,transformation.source_columns,transformation.parameters',
+                    'PORCENTAJES=usar ARITHMETIC con un source_column y parameters.operator=MULTIPLY + parameters.scalar decimal; 10%=0.10',
+                    'NO_SQL_NO_PYSPARK=solo contrato estructurado validable',
+                  ].join(' | '),
                 };
                 const response = await silverApi.runSilverAgent('mapping-advisor', request);
                 const evidence = response.evidence ?? parseAgentJson(response.output);

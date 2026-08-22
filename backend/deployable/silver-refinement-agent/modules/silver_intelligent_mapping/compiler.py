@@ -96,8 +96,13 @@ def compile_pyspark_expression(column: IntelligentMappingColumn) -> str:
         operator = str(transformation.parameters["operator"]).upper()
         symbols = {"ADD": "+", "SUBTRACT": "-", "MULTIPLY": "*", "DIVIDE": "/"}
         left = _identifier(transformation.source_columns[0], "source_column")
-        right = _identifier(transformation.source_columns[1], "source_column")
-        expression = f'(F.col("{left}") {symbols[operator]} F.col("{right}"))'
+        scalar = transformation.parameters.get("scalar")
+        if scalar is not None:
+            right_expression = _literal(scalar)
+        else:
+            right = _identifier(transformation.source_columns[1], "source_column")
+            right_expression = f'F.col("{right}")'
+        expression = f'(F.col("{left}") {symbols[operator]} {right_expression})'
     else:
         raise ValueError(f"Transformación no soportada: {transformation.type.value}")
 

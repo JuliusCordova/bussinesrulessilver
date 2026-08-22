@@ -15,11 +15,15 @@ from .models import (
     ConfirmWorkflowSourceRequest,
     CreateSilverWorkflowRequest,
     GenerateBusinessRulesRequest,
+    MappingImpactRequest,
+    MappingImpactResponse,
     ReviewQualityRequest,
     SaveBusinessRulesDraftRequest,
+    SaveSilverMappingRequest,
     SaveSilverSpecificationRequest,
     SilverWorkflowListResponse,
     SilverWorkflowRecord,
+    SilverWorkflowVersionListResponse,
     WorkflowRepositoryHealth,
     WorkflowStatus,
 )
@@ -34,6 +38,7 @@ register_destination_catalog_routes(router)
 require_workflow_create = workflow_business_operation("workflow_create")
 require_workflow_list = workflow_business_operation("workflow_list")
 require_workflow_get = workflow_business_operation("workflow_get")
+require_workflow_mapping = workflow_business_operation("workflow_mapping")
 require_workflow_confirm_source = workflow_business_operation("workflow_confirm_source")
 require_business_rules_get = workflow_business_operation("business_rules_get")
 require_business_rules_draft = workflow_business_operation("business_rules_draft")
@@ -75,6 +80,16 @@ def list_workflows(limit: int = Query(default=50, ge=1, le=200), workflow_status
     result = business.workflow_service.list(limit=limit, status=workflow_status)
     business.record_success()
     return result
+
+
+@router.get("/{workflow_id}/versions", response_model=SilverWorkflowVersionListResponse)
+def list_workflow_versions(workflow_id: str, business: WorkflowBusinessOperation = Depends(require_workflow_get)) -> SilverWorkflowVersionListResponse:
+    try:
+        result = business.workflow_service.list_versions(workflow_id)
+        business.record_success(workflow_id=workflow_id)
+        return result
+    except WorkflowNotFoundError as exc:
+        raise _not_found(exc) from exc
 
 
 @router.get("/{workflow_id}/business-rules", response_model=BusinessRulesSection)
@@ -126,6 +141,34 @@ def confirm_workflow_business_rules(workflow_id: str, request: ConfirmBusinessRu
     except (WorkflowVersionConflictError, WorkflowStateConflictError) as exc:
         raise _conflict(exc) from exc
     except BusinessRuleValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
+
+@router.post("/{workflow_id}/mapping/impact", response_model=MappingImpactResponse)
+def analyze_workflow_mapping_impact(workflow_id: str, request: MappingImpactRequest, business: WorkflowBusinessOperation = Depends(require_workflow_mapping)) -> MappingImpactResponse:
+    try:
+        result = business.workflow_service.analyze_mapping_impact(workflow_id, request)
+        business.record_success(workflow_id=workflow_id)
+        return result
+    except WorkflowNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except (WorkflowVersionConflictError, WorkflowStateConflictError) as exc:
+        raise _conflict(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
+
+@router.put("/{workflow_id}/mapping", response_model=SilverWorkflowRecord)
+def save_workflow_mapping(workflow_id: str, request: SaveSilverMappingRequest, business: WorkflowBusinessOperation = Depends(require_workflow_mapping)) -> SilverWorkflowRecord:
+    try:
+        record = business.workflow_service.save_mapping_version(workflow_id, request)
+        business.record_success(workflow_id=workflow_id)
+        return record
+    except WorkflowNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except (WorkflowVersionConflictError, WorkflowStateConflictError) as exc:
+        raise _conflict(exc) from exc
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
 

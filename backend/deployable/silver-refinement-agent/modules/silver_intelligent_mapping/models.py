@@ -17,6 +17,7 @@ class TransformationType(str, Enum):
     LOWER = "LOWER"
     CONCAT = "CONCAT"
     DATE_PARSE = "DATE_PARSE"
+    ARITHMETIC = "ARITHMETIC"
     EXCLUDE = "EXCLUDE"
 
 
@@ -50,6 +51,12 @@ class MappingTransformation(BaseModel):
             raise ValueError("CONCAT requiere al menos dos source_columns")
         if self.type == TransformationType.DATE_PARSE and not self.parameters.get("format"):
             raise ValueError("DATE_PARSE requiere parameters.format")
+        if self.type == TransformationType.ARITHMETIC:
+            operator = str(self.parameters.get("operator") or "").upper()
+            if operator not in {"ADD", "SUBTRACT", "MULTIPLY", "DIVIDE"}:
+                raise ValueError("ARITHMETIC requiere operator ADD, SUBTRACT, MULTIPLY o DIVIDE")
+            if len(self.source_columns) != 2:
+                raise ValueError("ARITHMETIC requiere exactamente dos source_columns")
         return self
 
 

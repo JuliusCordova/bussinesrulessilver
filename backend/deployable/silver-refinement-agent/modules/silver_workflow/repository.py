@@ -30,17 +30,20 @@ class WorkflowRepository(Protocol):
     def create(self, record: SilverWorkflowRecord) -> SilverWorkflowRecord: ...
     def get(self, workflow_id: str) -> SilverWorkflowRecord | None: ...
     def list(self, *, limit: int, status: WorkflowStatus | None = None) -> list[SilverWorkflowRecord]: ...
+    def list_versions(self, workflow_id: str) -> list[SilverWorkflowRecord]: ...
     def confirm_source(self, workflow_id: str, *, expected_version: int, schema_context: SchemaContextEvidence, confirmed_by: str, updated_at: datetime) -> SilverWorkflowRecord: ...
     def save_business_rules_draft(self, workflow_id: str, *, expected_version: int, section: BusinessRulesSection, authored_by: str, change_reason: str, updated_at: datetime) -> SilverWorkflowRecord: ...
     def save_business_rules_proposal(self, workflow_id: str, *, expected_version: int, section: BusinessRulesSection, generated_by: str, generation_reason: str, idempotency_key: str, updated_at: datetime) -> SilverWorkflowRecord: ...
     def confirm_business_rules(self, workflow_id: str, *, expected_version: int, section: BusinessRulesSection, confirmed_by: str, confirmation_reason: str, updated_at: datetime) -> SilverWorkflowRecord: ...
+    def save_mapping_version(self, workflow_id: str, *, expected_version: int, mapping_version: int, target: SilverTargetReference, mapping_rules: list[dict[str, object]], edited_by: str, change_reason: str, updated_at: datetime) -> SilverWorkflowRecord: ...
     def save_specification(self, workflow_id: str, *, expected_version: int, spec_id: str, mapping_version: int, target: SilverTargetReference, mapping_rules: list[dict[str, object]], created_by: str, change_reason: str, updated_at: datetime) -> SilverWorkflowRecord: ...
-    def review_quality(self, workflow_id: str, *, expected_version: int, quality_rules: list[dict[str, object]], quality_review: dict[str, object], updated_at: datetime) -> SilverWorkflowRecord: ...
+    def review_quality(self, workflow_id: str, *, expected_version: int, quality_rules: list[dict[str, object]], quality_rules_version: int, quality_review: dict[str, object], updated_at: datetime) -> SilverWorkflowRecord: ...
 
 
 class InMemoryWorkflowRepository:
     def __init__(self) -> None:
         self._records: dict[str, SilverWorkflowRecord] = {}
+        self._snapshots: dict[str, dict[int, SilverWorkflowRecord]] = {}
         self._lock = RLock()
 
     @property
@@ -55,6 +58,7 @@ class InMemoryWorkflowRepository:
             if record.workflow_id in self._records:
                 raise WorkflowVersionConflictError(f"El workflow ya existe: {record.workflow_id}")
             self._records[record.workflow_id] = deepcopy(record)
+            self._snapshots.setdefault(record.workflow_id, {})[record.version] = deepcopy(record)
             return deepcopy(record)
 
     def get(self, workflow_id: str) -> SilverWorkflowRecord | None:
@@ -69,6 +73,14 @@ class InMemoryWorkflowRepository:
                 records = [record for record in records if record.status == status]
             records.sort(key=lambda record: record.updated_at, reverse=True)
             return [deepcopy(record) for record in records[:limit]]
+
+    def list_versions(self, workflow_id: str) -> list[SilverWorkflowRecord]:
+        with self._lock:
+            if workflow_id not in self._records:
+                raise WorkflowNotFoundError(f"Workflow no encontrado: {workflow_id}")
+            snapshots = list(self._snapshots.get(workflow_id, {}).values())
+            snapshots.sort(key=lambda record: record.version, reverse=True)
+            return [deepcopy(record) for record in snapshots]
 
     def confirm_source(self, workflow_id: str, *, expected_version: int, schema_context: SchemaContextEvidence, confirmed_by: str, updated_at: datetime) -> SilverWorkflowRecord:
         with self._lock:
@@ -111,6 +123,37 @@ class InMemoryWorkflowRepository:
             metadata.update({"business_rules_confirmed_by": confirmed_by, "business_rules_confirmation_reason": confirmation_reason, "business_rules_confirmed_at": updated_at.isoformat()})
             return self._store(record.model_copy(deep=True, update={"version": record.version + 1, "active_step": 4, "business_rules": section, "updated_at": updated_at, "metadata": metadata}))
 
+    def save_mapping_version(self, workflow_id: str, *, expected_version: int, mapping_version: int, target: SilverTargetReference, mapping_rules: list[dict[str, object]], edited_by: str, change_reason: str, updated_at: datetime) -> SilverWorkflowRecord:
+        with self._lock:
+            record = self._require_record(workflow_id)
+            self._require_version(record, expected_version, "guardar una nueva versión del mapping")
+            metadata = dict(record.metadata)
+            metadata.update({
+                "mapping_last_edited_by": edited_by,
+                "mapping_last_change_reason": change_reason,
+                "mapping_last_changed_at": updated_at.isoformat(),
+                "superseded_spec_id": record.spec_id,
+                "superseded_execution_id": record.execution_id,
+                "superseded_mapping_version": record.mapping_version,
+            })
+            return self._store(record.model_copy(deep=True, update={
+                "version": record.version + 1,
+                "status": WorkflowStatus.IN_PROGRESS,
+                "active_step": 4,
+                "mapping_version": mapping_version,
+                "silver_target": target,
+                "mapping_rules": mapping_rules,
+                "spec_id": None,
+                "quality_review": None,
+                "artifact_package": None,
+                "governance": None,
+                "execution": None,
+                "validation": None,
+                "execution_id": None,
+                "updated_at": updated_at,
+                "metadata": metadata,
+            }))
+
     def save_specification(self, workflow_id: str, *, expected_version: int, spec_id: str, mapping_version: int, target: SilverTargetReference, mapping_rules: list[dict[str, object]], created_by: str, change_reason: str, updated_at: datetime) -> SilverWorkflowRecord:
         with self._lock:
             record = self._require_record(workflow_id)
@@ -125,7 +168,7 @@ class InMemoryWorkflowRepository:
                 "mapping_rules": mapping_rules, "updated_at": updated_at, "metadata": metadata,
             }))
 
-    def review_quality(self, workflow_id: str, *, expected_version: int, quality_rules: list[dict[str, object]], quality_review: dict[str, object], updated_at: datetime) -> SilverWorkflowRecord:
+    def review_quality(self, workflow_id: str, *, expected_version: int, quality_rules: list[dict[str, object]], quality_rules_version: int, quality_review: dict[str, object], updated_at: datetime) -> SilverWorkflowRecord:
         with self._lock:
             record = self._require_record(workflow_id)
             self._require_version(record, expected_version, "confirmar la revisión de calidad")
@@ -139,7 +182,8 @@ class InMemoryWorkflowRepository:
             })
             return self._store(record.model_copy(deep=True, update={
                 "version": record.version + 1, "active_step": 6,
-                "quality_rules": quality_rules, "quality_review": quality_review,
+                "quality_rules": quality_rules, "quality_rules_version": quality_rules_version,
+                "quality_review": quality_review,
                 "updated_at": updated_at, "metadata": metadata,
             }))
 
@@ -156,4 +200,5 @@ class InMemoryWorkflowRepository:
 
     def _store(self, updated: SilverWorkflowRecord) -> SilverWorkflowRecord:
         self._records[updated.workflow_id] = deepcopy(updated)
+        self._snapshots.setdefault(updated.workflow_id, {})[updated.version] = deepcopy(updated)
         return deepcopy(updated)

@@ -1,4 +1,4 @@
-import type { CatalogField, GeneratedArtifact, WorkflowState } from './types';
+import type { CatalogField, GeneratedArtifact, GovernedQualityRule, WorkflowState } from './types';
 
 const DEFAULT_BASE_URL = 'https://silver-refinement-agent-mkqutd4koq-uc.a.run.app';
 
@@ -60,8 +60,17 @@ export const silverApi = {
       body: JSON.stringify(payload),
     }),
 
+  listWorkflows: (limit = 50, status?: WorkflowState['status']) => {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (status) query.set('status', status);
+    return request<SilverWorkflowListResponse>(`/silver-workflows?${query.toString()}`);
+  },
+
   getWorkflow: (workflowId: string) =>
     request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}`),
+
+  listWorkflowVersions: (workflowId: string) =>
+    request<SilverWorkflowVersionListResponse>(`/silver-workflows/${workflowId}/versions`),
 
   confirmSource: (workflowId: string, payload: unknown) =>
     request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}/confirm-source`, {
@@ -72,6 +81,18 @@ export const silverApi = {
   generateMapping: (workflowId: string, payload: unknown) =>
     request<MappingRecommendationResponse>(`/silver-workflows/${workflowId}/mapping-recommendations`, {
       method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  analyzeMappingImpact: (workflowId: string, payload: unknown) =>
+    request<MappingImpactResponse>(`/silver-workflows/${workflowId}/mapping/impact`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  saveMapping: (workflowId: string, payload: unknown) =>
+    request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}/mapping`, {
+      method: 'PUT',
       body: JSON.stringify(payload),
     }),
 
@@ -207,7 +228,7 @@ export interface SilverAgentRunRequest {
   business_keys: string[];
   watermark_column?: string | null;
   business_rules?: Array<Record<string, unknown>>;
-  approved_quality_rules?: Array<Record<string, unknown>>;
+  approved_quality_rules?: GovernedQualityRule[];
   context?: string | null;
   requested_by?: string | null;
 }
@@ -221,18 +242,97 @@ export interface SilverAgentRunResponse {
   evidence?: Record<string, unknown> | null;
 }
 
+export interface SilverSourceReference {
+  connection_id: string;
+  project_id?: string | null;
+  dataset_id: string;
+  table_id: string;
+  fully_qualified_name?: string | null;
+}
+
+export interface SilverTargetReference {
+  project_id: string;
+  dataset_id: string;
+  table_id: string;
+}
+
+export interface SilverBusinessRulesSection {
+  status?: string;
+  proposal_id?: string | null;
+  rules?: Array<Record<string, unknown>>;
+  confirmed_by?: string | null;
+  confirmed_at?: string | null;
+  last_modified_by?: string | null;
+  last_modified_at?: string | null;
+}
+
 export interface SilverWorkflowRecord {
   workflow_id: string;
   version: number;
   status: WorkflowState['status'];
   active_step: number;
+  source: SilverSourceReference;
+  source_confirmed?: boolean;
+  schema_context?: Record<string, unknown> | null;
+  business_rules?: SilverBusinessRulesSection;
+  mapping_rules?: Array<Record<string, unknown>>;
+  mapping_version?: number | null;
+  silver_target?: SilverTargetReference | null;
+  quality_rules?: GovernedQualityRule[];
+  quality_rules_version?: number | null;
+  quality_review?: Record<string, unknown> | null;
+  artifact_package?: Record<string, unknown> | null;
+  governance?: Record<string, unknown> | null;
+  execution?: Record<string, unknown> | null;
+  validation?: Record<string, unknown> | null;
   spec_id?: string | null;
   execution_id?: string | null;
-  mapping_version?: number | null;
   available_actions?: string[];
-  business_rules?: { proposal_id?: string | null; rules?: unknown[] };
-  mapping_rules?: unknown[];
-  silver_target?: unknown;
+  correlation_id?: string;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SilverWorkflowListResponse {
+  total: number;
+  workflows: SilverWorkflowRecord[];
+}
+
+export interface SilverWorkflowVersionSummary {
+  workflow_id: string;
+  workflow_version: number;
+  mapping_version?: number | null;
+  quality_rules_version?: number | null;
+  spec_id?: string | null;
+  package_version?: number | null;
+  execution_id?: string | null;
+  status: WorkflowState['status'];
+  updated_at: string;
+  lifecycle_status: 'CURRENT' | 'SUPERSEDED' | string;
+}
+
+export interface SilverWorkflowVersionListResponse {
+  workflow_id: string;
+  current_version: number;
+  total: number;
+  versions: SilverWorkflowVersionSummary[];
+}
+
+export interface MappingImpactResponse {
+  workflow_id: string;
+  current_workflow_version: number;
+  current_mapping_version?: number | null;
+  proposed_mapping_version: number;
+  impact_level: 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | string;
+  has_changes: boolean;
+  added_columns: string[];
+  removed_columns: string[];
+  modified_columns: string[];
+  affected_quality_rules: string[];
+  downstream_invalidations: string[];
+  summary: string;
 }
 
 export interface MappingRecommendationResponse {

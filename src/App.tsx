@@ -7,20 +7,24 @@ import {
   type AgentOpsDashboard,
   type AgentOpsHealth,
   type CatalogTableDetail,
+  type MappingImpactResponse,
   type SilverAgentDescriptor,
   type SilverAgentRunRequest,
   type SilverWorkflowRecord,
 } from './api';
 import { businessRules, seedColumns, seedSource } from './seed';
 import { toBackendTransformation } from './transformations';
-import type { CatalogField, GeneratedArtifact, MappingRule, StepId, WorkflowState } from './types';
+import type {
+  CatalogField, GeneratedArtifact, GovernedQualityRule, MappingRule,
+  QualityDimension, QualityRuntimeAction, StepId, WorkflowState,
+} from './types';
 
 const steps: Array<{ id: StepId; label: string; description: string }> = [
   { id: 'source', label: 'Origen y destino', description: 'Fuente Bronze y tabla Silver' },
   { id: 'incremental', label: 'Incrementalidad', description: 'Business key y watermark' },
   { id: 'mapping', label: 'Mapping', description: 'Transformaciones y campos derivados' },
   { id: 'rules', label: 'Reglas', description: 'Reglas editables y aprobacion' },
-  { id: 'artifacts', label: 'Artefactos', description: 'DDL, notebook y paquete' },
+  { id: 'artifacts', label: 'Package & Versiones', description: 'Versiones, Storage, hashes y paquete gobernado' },
   { id: 'execution', label: 'Dataproc', description: 'Validacion y ejecucion' },
   { id: 'governance', label: 'Gobierno', description: 'AgentOps, auditoria y salud' },
 ];
@@ -220,7 +224,7 @@ function directMappingFromColumns(columns: CatalogField[]): MappingRule[] {
 }
 
 function mappingFromRecommendation(columns: Array<Record<string, unknown>>): MappingRule[] {
-  return columns.map((column) => {
+  return columns.map<MappingRule>((column) => {
     const transformation =
       column.transformation && typeof column.transformation === 'object'
         ? column.transformation as Record<string, unknown>
@@ -240,6 +244,11 @@ function mappingFromRecommendation(columns: Array<Record<string, unknown>>): Map
         transformation.parameters && typeof transformation.parameters === 'object'
           ? transformation.parameters as Record<string, unknown>
           : {},
+      sourceColumns: Array.isArray(transformation.source_columns)
+        ? transformation.source_columns.map(String)
+        : undefined,
+      derivationMode: column.derivation_mode === 'DERIVED_NL' ? 'DERIVED_NL' : undefined,
+      naturalRule: typeof column.natural_rule === 'string' ? column.natural_rule : undefined,
       confidence: typeof column.confidence === 'number' ? column.confidence : undefined,
       reason: typeof column.reason === 'string' ? column.reason : undefined,
       risk: typeof column.risk === 'string' ? column.risk : undefined,
@@ -376,8 +385,19 @@ function buildArtifactContract(workflow: WorkflowState) {
       nullable:
         rule.nullable &&
         !(workflow.businessKeys ?? []).includes(rule.targetColumn),
-      source_column: rule.sourceColumn,
-      transformation: toBackendTransformation(rule.transformationType),
+      source_column: rule.sourceColumn || null,
+      source_columns: rule.sourceColumns?.length
+        ? rule.sourceColumns
+        : rule.sourceColumn ? [rule.sourceColumn] : [],
+      transformation: {
+        type: toBackendTransformation(rule.transformationType),
+        source_columns: rule.sourceColumns?.length
+          ? rule.sourceColumns
+          : rule.sourceColumn ? [rule.sourceColumn] : [],
+        parameters: rule.parameters ?? {},
+      },
+      derivation_mode: rule.derivationMode ?? null,
+      natural_rule: rule.naturalRule ?? null,
       include: true,
       confidence: rule.confidence,
       recommendation_reason: rule.reason,
@@ -415,30 +435,50 @@ function saveBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function proposalToBackendRule(proposal: Record<string, unknown>) {
+function proposalToBackendRule(proposal: Record<string, unknown>): GovernedQualityRule {
   const columnName = String(proposal.column_name ?? '');
-  const ruleType = String(proposal.rule_type ?? '');
+  const ruleType = String(proposal.rule_type ?? 'CUSTOM').toUpperCase();
+  const dimension: QualityDimension = ruleType === 'UNIQUE'
+    ? 'UNIQUENESS'
+    : ruleType === 'NOT_NULL' ? 'COMPLETENESS' : 'VALIDITY';
+  const ruleName = `${columnName || 'table'}_${ruleType.toLowerCase()}`;
   return {
-    rule_name: `${columnName}_${ruleType.toLowerCase()}`,
-    rule_dimension: ruleType === 'UNIQUE' ? 'UNIQUENESS' : 'VALIDITY',
+    rule_id: `qr_${ruleName}`,
+    name: ruleName,
+    version: 1,
+    dimension,
     rule_type: ruleType,
-    column_name: columnName,
-    rule_parameters: (proposal.rule_parameters as Record<string, unknown> | undefined) ?? {},
+    columns: columnName ? [columnName] : [],
+    parameters: (proposal.rule_parameters as Record<string, unknown> | undefined) ?? {},
     warning_threshold: 0,
     critical_threshold: 1,
-    severity_level: String(proposal.severity_level ?? 'MEDIUM'),
-    active_flag: true,
-    agent_evidence: proposal.evidence ?? null,
-    agent_confidence: proposal.confidence ?? null,
+    severity: String(proposal.severity_level ?? 'MEDIUM'),
+    runtime_action: ruleType === 'NOT_NULL' || ruleType === 'UNIQUE' ? 'BLOCK_LOAD' : 'WARN',
+    evidence: proposal.evidence == null ? null : String(proposal.evidence),
+    confidence: typeof proposal.confidence === 'number' ? proposal.confidence : null,
+    source: 'AI_RECOMMENDED',
+    status: 'PENDING_APPROVAL',
+    active: true,
+    approved_by: null,
+    approved_at: null,
+    metadata: { current_status: proposal.current_status ?? null },
   };
 }
 
-export function App() {
-  const [workflow, setWorkflow] = useState<WorkflowState>({
-    status: 'DRAFT',
-    activeStep: 'source',
-  });
+export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
+  const [workflow, setWorkflow] = useState<WorkflowState>(() =>
+    initialWorkflow ?? {
+      status: 'DRAFT',
+      activeStep: 'source',
+    },
+  );
   const [showDataprocConfirm, setShowDataprocConfirm] = useState(false);
+  const [mappingImpact, setMappingImpact] = useState<MappingImpactResponse>();
+  const [mappingImpactFingerprint, setMappingImpactFingerprint] = useState<string>();
+  const [derivedNlProposal, setDerivedNlProposal] = useState<MappingRule>();
+  const [derivedNlInterpretation, setDerivedNlInterpretation] = useState<string>();
+  const [qualityNlProposal, setQualityNlProposal] = useState<GovernedQualityRule>();
+  const [qualityNlInterpretation, setQualityNlInterpretation] = useState<string>();
 
   const activeIndex = stepOrder.indexOf(workflow.activeStep);
   const activeStep = steps[activeIndex];
@@ -709,14 +749,74 @@ export function App() {
                 }));
               });
             }}
+            derivedNlProposal={derivedNlProposal}
+            derivedNlInterpretation={derivedNlInterpretation}
+            onGenerateDerivedNl={async (intent) => {
+              const naturalRule = intent.trim();
+              if (!naturalRule) {
+                applyError(new Error('Escribe una regla en lenguaje natural antes de interpretarla.'));
+                return;
+              }
+              await runAction('Interpretando regla natural con mapping-advisor...', async () => {
+                const request = {
+                  ...buildAgentRequest(workflow),
+                  context: `DERIVED_NL:${naturalRule}`,
+                };
+                const response = await silverApi.runSilverAgent('mapping-advisor', request);
+                const evidence = response.evidence ?? parseAgentJson(response.output);
+                const proposal = evidence.proposal;
+                if (!evidence.valid || !proposal || typeof proposal !== 'object' || Array.isArray(proposal)) {
+                  throw new Error('El backend no validó una propuesta DERIVED_NL utilizable.');
+                }
+                const mapped = mappingFromRecommendation([proposal as Record<string, unknown>])[0];
+                if (!mapped || mapped.derivationMode !== 'DERIVED_NL') {
+                  throw new Error('La propuesta DERIVED_NL perdió su contrato de trazabilidad.');
+                }
+                setDerivedNlProposal(mapped);
+                setDerivedNlInterpretation(String(evidence.interpretation ?? 'Entendí tu regla y requiere confirmación.'));
+                setWorkflow((current) => ({
+                  ...current,
+                  agentSessionId: response.session_id,
+                  ...demoWorkflowPatch('Propuesta DERIVED_NL validada y pendiente de aprobación humana'),
+                  backendMessage: JSON.stringify(response),
+                }));
+              });
+            }}
+            onConfirmDerivedNl={() => {
+              if (!derivedNlProposal) return;
+              const currentRows = workflow.mappingRules?.length
+                ? workflow.mappingRules
+                : directMappingFromColumns(workflow.sourceColumns ?? []);
+              if (currentRows.some((row) => row.include && row.targetColumn === derivedNlProposal.targetColumn)) {
+                applyError(new Error(`Ya existe una columna destino ${derivedNlProposal.targetColumn}; ajusta la regla antes de confirmarla.`));
+                return;
+              }
+              setMappingImpact(undefined);
+              setMappingImpactFingerprint(undefined);
+              setWorkflow((current) => ({
+                ...current,
+                mappingRules: [...currentRows, derivedNlProposal],
+                mappingSource: 'DERIVED_NL',
+                ...demoWorkflowPatch('Derivación NL confirmada por usuario e incorporada al mapping'),
+              }));
+              setDerivedNlProposal(undefined);
+              setDerivedNlInterpretation(undefined);
+            }}
+            onRejectDerivedNl={() => {
+              setDerivedNlProposal(undefined);
+              setDerivedNlInterpretation(undefined);
+            }}
+            impactAnalysis={mappingImpact}
             onMappingChange={(rules) => {
+              setMappingImpact(undefined);
+              setMappingImpactFingerprint(undefined);
               setWorkflow((current) => ({
                 ...current,
                 mappingRules: rules,
                 mappingSource: 'USER',
               }));
             }}
-            onNext={() => {
+            onNext={async () => {
               const rules = workflow.mappingRules?.length
                 ? workflow.mappingRules
                 : directMappingFromColumns(workflow.sourceColumns ?? []);
@@ -730,6 +830,76 @@ export function App() {
                 applyError(new Error('Las columnas destino deben tener nombres unicos y no vacios.'));
                 return;
               }
+              if (workflow.resumedFromBackend && workflow.workflowId) {
+                const includedRules = rules.filter((rule) => rule.include);
+                const payload = {
+                  expected_version: currentVersion(workflow),
+                  target: {
+                    project_id: workflow.projectId ?? seedSource.projectId,
+                    dataset_id: workflow.targetDataset ?? seedSource.targetDataset,
+                    table_id: workflow.targetTable ?? seedSource.targetTable,
+                  },
+                  columns: includedRules.map((rule) => ({
+                    name: rule.targetColumn,
+                    data_type: rule.targetType,
+                    nullable: rule.nullable,
+                    source_column: rule.sourceColumn || null,
+                    source_columns: rule.sourceColumns?.length
+                      ? rule.sourceColumns
+                      : rule.sourceColumn ? [rule.sourceColumn] : [],
+                    transformation: {
+                      type: toBackendTransformation(rule.transformationType),
+                      source_columns: rule.sourceColumns?.length
+                        ? rule.sourceColumns
+                        : rule.sourceColumn ? [rule.sourceColumn] : [],
+                      parameters: rule.parameters ?? {},
+                    },
+                    derivation_mode: rule.derivationMode ?? null,
+                    natural_rule: rule.naturalRule ?? null,
+                  })),
+                };
+                const fingerprint = JSON.stringify(payload);
+                if (!mappingImpact || mappingImpactFingerprint !== fingerprint) {
+                  await runAction('Analizando impacto del cambio de mapping...', async () => {
+                    const impact = await silverApi.analyzeMappingImpact(workflow.workflowId!, payload);
+                    setMappingImpact(impact);
+                    setMappingImpactFingerprint(fingerprint);
+                  });
+                  return;
+                }
+                if (!mappingImpact.has_changes) {
+                  applyError(new Error('No se detectaron cambios materiales frente al mapping persistido.'));
+                  return;
+                }
+                await runAction('Persistiendo nueva versión gobernada del mapping...', async () => {
+                  const updated = await silverApi.saveMapping(workflow.workflowId!, {
+                    ...payload,
+                    edited_by: REQUESTED_BY,
+                    change_reason: `Impact Analysis ${mappingImpact.impact_level}: ${mappingImpact.summary}`,
+                  });
+                  setMappingImpact(undefined);
+                  setMappingImpactFingerprint(undefined);
+                  setWorkflow((current) => ({
+                    ...current,
+                    ...workflowPatchFromRecord(updated),
+                    mappingRules: rules,
+                    mappingSource: 'USER',
+                    mappingVersion: updated.mapping_version ?? current.mappingVersion,
+                    specId: undefined,
+                    executionId: undefined,
+                    executionStatus: undefined,
+                    generatedArtifacts: undefined,
+                    qualityReviewed: false,
+                    qualityReviewDecision: undefined,
+                    activeStep: 'artifacts',
+                    resumedFromBackend: true,
+                    ...demoWorkflowPatch(`Mapping v${updated.mapping_version ?? '?'} persistido; Spec y Package requieren regeneración`),
+                    backendMessage: JSON.stringify(updated),
+                  }));
+                });
+                return;
+              }
+
               setWorkflow((current) => ({
                 ...current,
                 mappingRules: rules,
@@ -771,14 +941,69 @@ export function App() {
               const rule = proposalToBackendRule(proposal);
               setWorkflow((current) => {
                 const existing = current.approvedQualityRules ?? [];
-                const ruleName = String(rule.rule_name);
                 return {
                   ...current,
                   approvedQualityRules: approved
-                    ? [...existing.filter((item) => item.rule_name !== ruleName), rule]
-                    : existing.filter((item) => item.rule_name !== ruleName),
+                    ? [...existing.filter((item) => item.rule_id !== rule.rule_id), rule]
+                    : existing.filter((item) => item.rule_id !== rule.rule_id),
                 };
               });
+            }}
+            qualityNlProposal={qualityNlProposal}
+            qualityNlInterpretation={qualityNlInterpretation}
+            onGenerateQualityNl={async (intent) => {
+              const naturalRule = intent.trim();
+              if (!naturalRule) {
+                applyError(new Error('Escribe una regla de calidad en lenguaje natural antes de interpretarla.'));
+                return;
+              }
+              await runAction('Interpretando regla de calidad con Gemini ADK...', async () => {
+                const response = await silverApi.runSilverAgent('quality-rule-advisor', {
+                  ...buildAgentRequest(workflow),
+                  context: `QUALITY_NL: ${naturalRule}`,
+                });
+                const output = response.evidence ?? parseAgentJson(response.output);
+                const proposal = output.proposal;
+                if (!proposal || typeof proposal !== 'object' || Array.isArray(proposal)) {
+                  throw new Error('El quality-rule-advisor no devolvió una propuesta gobernada.');
+                }
+                setQualityNlProposal(proposal as GovernedQualityRule);
+                setQualityNlInterpretation(String(output.interpretation ?? 'Entendí tu regla y la validé contra el schema.'));
+                setWorkflow((current) => ({
+                  ...current,
+                  agentSessionId: response.session_id,
+                  backendMessage: JSON.stringify(response),
+                }));
+              });
+            }}
+            onConfirmQualityNl={() => {
+              if (!qualityNlProposal) return;
+              setWorkflow((current) => ({
+                ...current,
+                approvedQualityRules: [
+                  ...(current.approvedQualityRules ?? []).filter((item) => item.rule_id !== qualityNlProposal.rule_id),
+                  qualityNlProposal,
+                ],
+                ...demoWorkflowPatch('Regla QUALITY_NL confirmada por usuario y agregada al Designer'),
+              }));
+              setQualityNlProposal(undefined);
+              setQualityNlInterpretation(undefined);
+            }}
+            onAddManualRule={(rule) => {
+              setWorkflow((current) => ({
+                ...current,
+                approvedQualityRules: [
+                  ...(current.approvedQualityRules ?? []).filter((item) => item.rule_id !== rule.rule_id),
+                  rule,
+                ],
+                ...demoWorkflowPatch('Regla manual agregada al Quality Rule Designer'),
+              }));
+            }}
+            onRemoveRule={(ruleId) => {
+              setWorkflow((current) => ({
+                ...current,
+                approvedQualityRules: (current.approvedQualityRules ?? []).filter((item) => item.rule_id !== ruleId),
+              }));
             }}
             onNext={async () => {
               await runAction('Generando y confirmando reglas de negocio...', async () => {
@@ -831,6 +1056,8 @@ export function App() {
                   ...current,
                   ...workflowPatchFromRecord(reviewed),
                   specId: specified.spec_id ?? reviewed.spec_id ?? current.specId,
+                  approvedQualityRules: reviewed.quality_rules ?? [],
+                  qualityRulesVersion: reviewed.quality_rules_version ?? current.qualityRulesVersion,
                   qualityReviewed: true,
                   qualityReviewDecision: 'APPROVED',
                   activeStep: 'artifacts',
@@ -857,6 +1084,11 @@ export function App() {
                 }
                 if (!workflow.specId) throw new Error('Quality Review no devolvio spec_id.');
                 const contract = buildArtifactContract(workflow);
+                const governedRules = workflow.approvedQualityRules ?? [];
+                const notApproved = governedRules.filter((rule) => rule.status !== 'APPROVED');
+                if (notApproved.length) {
+                  throw new Error('El package solo puede ejecutarse con reglas de calidad APPROVED.');
+                }
                 const pkg = await silverApi.generateArtifacts(workflow.specId, {
                   mapping_version: workflow.mappingVersion ?? 1,
                   target_project: workflow.projectId ?? seedSource.projectId,
@@ -873,17 +1105,21 @@ export function App() {
                   source_dataset: workflow.sourceDataset ?? seedSource.sourceDataset,
                   source_table: workflow.sourceTable ?? seedSource.sourceTable,
                   generated_by: REQUESTED_BY,
-                  quality_rules: contract.qualityRules,
+                  quality_rules: governedRules.length ? governedRules : contract.qualityRules,
                 });
                 const execution = await silverApi.createExecution({
                   spec_id: pkg.spec_id,
                   requested_by: REQUESTED_BY,
                 });
+                const packageArtifact = pkg.artifacts.find((artifact) =>
+                  artifact.artifact_type === 'ARTIFACT_PACKAGE',
+                );
                 setWorkflow((current) => ({
                   ...current,
                   ...demoWorkflowPatch('Artefactos descargables y execution creados'),
                   specId: pkg.spec_id,
                   mappingVersion: pkg.mapping_version,
+                  packageVersion: packageArtifact?.artifact_version ?? current.packageVersion,
                   generatedArtifacts: pkg.artifacts,
                   executionId: execution.execution_id,
                   executionStatus: 'PENDING',
@@ -1628,13 +1864,25 @@ function MappingStep({
   workflow,
   onGenerateDeterministic,
   onGenerateAgent,
+  derivedNlProposal,
+  derivedNlInterpretation,
+  onGenerateDerivedNl,
+  onConfirmDerivedNl,
+  onRejectDerivedNl,
   onMappingChange,
+  impactAnalysis,
   onNext,
 }: {
   workflow: WorkflowState;
   onGenerateDeterministic: () => void;
   onGenerateAgent: () => void;
+  derivedNlProposal?: MappingRule;
+  derivedNlInterpretation?: string;
+  onGenerateDerivedNl: (intent: string) => void;
+  onConfirmDerivedNl: () => void;
+  onRejectDerivedNl: () => void;
   onMappingChange: (rules: MappingRule[]) => void;
+  impactAnalysis?: MappingImpactResponse;
   onNext: () => void;
 }) {
   const sourceColumns = workflow.sourceColumns ?? [];
@@ -1642,7 +1890,8 @@ function MappingStep({
     ? workflow.mappingRules
     : directMappingFromColumns(sourceColumns);
   const typeOptions = Array.from(new Set(sourceColumns.map((column) => column.type)));
-  const transformations = ['DIRECT', 'TRIM', 'UPPER', 'LOWER', 'CAST', 'EXCLUDE'];
+  const transformations = ['DIRECT', 'TRIM', 'UPPER', 'LOWER', 'CAST', 'ARITHMETIC', 'EXCLUDE'];
+  const [derivedIntent, setDerivedIntent] = useState('');
 
   function updateRow(index: number, patch: Partial<MappingRule>) {
     onMappingChange(rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
@@ -1681,6 +1930,41 @@ function MappingStep({
         </div>
       </div>
 
+      <div className="sprintNote">
+        <strong>Crear campo derivado con lenguaje natural</strong>
+        <span>Gemini interpreta la intención; el backend valida el contrato y tú decides si se incorpora al mapping.</span>
+        <label className="field">
+          <span>Regla de negocio</span>
+          <textarea
+            value={derivedIntent}
+            onChange={(event) => setDerivedIntent(event.target.value)}
+            placeholder="Ejemplo: crear monto_neto restando descuento a monto_bruto"
+            rows={3}
+          />
+        </label>
+        <div className="actions">
+          <button onClick={() => onGenerateDerivedNl(derivedIntent)} disabled={!derivedIntent.trim()}>
+            Interpretar regla con Gemini
+          </button>
+        </div>
+      </div>
+
+      {derivedNlProposal && (
+        <div className="validationBox">
+          <strong>DERIVED_NL · PENDIENTE DE APROBACIÓN</strong>
+          <span>{derivedNlInterpretation ?? 'Entendí tu regla y la convertí a un contrato estructurado.'}</span>
+          <small>Destino: {derivedNlProposal.targetColumn} · Tipo: {derivedNlProposal.targetType}</small>
+          <small>Fuentes: {(derivedNlProposal.sourceColumns ?? [derivedNlProposal.sourceColumn]).filter(Boolean).join(', ')}</small>
+          <small>Transformación: {derivedNlProposal.transformationType}</small>
+          <small>Regla original: {derivedNlProposal.naturalRule}</small>
+          {derivedNlProposal.risk && <small className="riskText">Riesgo: {derivedNlProposal.risk}</small>}
+          <div className="actions">
+            <button className="primary" onClick={onConfirmDerivedNl}>Confirmar derivación</button>
+            <button onClick={onRejectDerivedNl}>Rechazar</button>
+          </div>
+        </div>
+      )}
+
       <div className="mappingEditor">
         <div className="mappingEditorHeader">
           <strong>Usar</strong><strong>Origen</strong><strong>Destino</strong>
@@ -1697,22 +1981,26 @@ function MappingStep({
                 transformationType: event.target.checked ? row.transformationType : 'EXCLUDE',
               })}
             />
-            <select
-              value={row.sourceColumn}
-              onChange={(event) => {
-                const field = sourceColumns.find((column) => column.name === event.target.value);
-                updateRow(index, {
-                  sourceColumn: event.target.value,
-                  targetColumn: row.targetColumn || event.target.value,
-                  targetType: field?.type ?? row.targetType,
-                  nullable: field?.mode !== 'REQUIRED',
-                });
-              }}
-            >
-              {sourceColumns.map((column) => (
-                <option key={column.name} value={column.name}>{column.name}</option>
-              ))}
-            </select>
+            {row.derivationMode === 'DERIVED_NL' ? (
+              <span title={row.naturalRule}>{(row.sourceColumns ?? [row.sourceColumn]).filter(Boolean).join(' + ')}</span>
+            ) : (
+              <select
+                value={row.sourceColumn}
+                onChange={(event) => {
+                  const field = sourceColumns.find((column) => column.name === event.target.value);
+                  updateRow(index, {
+                    sourceColumn: event.target.value,
+                    targetColumn: row.targetColumn || event.target.value,
+                    targetType: field?.type ?? row.targetType,
+                    nullable: field?.mode !== 'REQUIRED',
+                  });
+                }}
+              >
+                {sourceColumns.map((column) => (
+                  <option key={column.name} value={column.name}>{column.name}</option>
+                ))}
+              </select>
+            )}
             <input
               value={row.targetColumn}
               onChange={(event) => updateRow(index, { targetColumn: event.target.value })}
@@ -1727,6 +2015,7 @@ function MappingStep({
             </select>
             <select
               value={row.transformationType}
+              disabled={row.derivationMode === 'DERIVED_NL'}
               onChange={(event) => updateRow(index, {
                 transformationType: event.target.value,
                 include: event.target.value !== 'EXCLUDE',
@@ -1746,12 +2035,24 @@ function MappingStep({
               <span>{row.reason ?? 'Sin justificacion registrada.'}</span>
               {row.confidence != null && <small>Confianza: {Math.round(row.confidence * 100)}%</small>}
               {row.risk && <small className="riskText">Riesgo: {row.risk}</small>}
+              {row.derivationMode === 'DERIVED_NL' && <small>DERIVED_NL · {row.naturalRule}</small>}
               {row.requiresApproval && <em>REQUIERE APROBACION</em>}
             </div>
           </article>
         ))}
       </div>
 
+      {impactAnalysis && (
+        <div className="validationBox">
+          <strong>Impact Analysis · {impactAnalysis.impact_level}</strong>
+          <span>{impactAnalysis.summary}</span>
+          <small>Agregadas: {impactAnalysis.added_columns.join(', ') || 'Ninguna'}</small>
+          <small>Eliminadas: {impactAnalysis.removed_columns.join(', ') || 'Ninguna'}</small>
+          <small>Modificadas: {impactAnalysis.modified_columns.join(', ') || 'Ninguna'}</small>
+          <small>Reglas afectadas: {impactAnalysis.affected_quality_rules.join(', ') || 'Ninguna'}</small>
+          <small>Se regenerará: {impactAnalysis.downstream_invalidations.join(', ') || 'Nada'}</small>
+        </div>
+      )}
       <div className="actions">
         <button onClick={addRow}>Agregar mapping</button>
       </div>
@@ -1760,7 +2061,7 @@ function MappingStep({
         {workflow.projectId ?? seedSource.projectId}.{workflow.targetDataset ?? seedSource.targetDataset}.
         {workflow.targetTable ?? seedSource.targetTable}
       </p>
-      <button className="primary" onClick={onNext}>Guardar mapping aprobado</button>
+      <button className="primary" onClick={onNext}>{impactAnalysis?.has_changes ? `Confirmar nueva versión v${impactAnalysis.proposed_mapping_version}` : workflow.resumedFromBackend ? 'Analizar impacto' : 'Guardar mapping aprobado'}</button>
     </section>
   );
 }
@@ -1770,17 +2071,62 @@ function RulesStep({
   workflow,
   onRecommend,
   onApproveProposal,
+  qualityNlProposal,
+  qualityNlInterpretation,
+  onGenerateQualityNl,
+  onConfirmQualityNl,
+  onAddManualRule,
+  onRemoveRule,
   onNext,
 }: {
   workflow: WorkflowState;
   onRecommend: () => void;
   onApproveProposal: (proposal: Record<string, unknown>, approved: boolean) => void;
+  qualityNlProposal?: GovernedQualityRule;
+  qualityNlInterpretation?: string;
+  onGenerateQualityNl: (intent: string) => void;
+  onConfirmQualityNl: () => void;
+  onAddManualRule: (rule: GovernedQualityRule) => void;
+  onRemoveRule: (ruleId: string) => void;
   onNext: () => void;
 }) {
   const proposals = workflow.qualityRuleProposals ?? [];
-  const approvedNames = new Set(
-    (workflow.approvedQualityRules ?? []).map((rule) => String(rule.rule_name)),
-  );
+  const approvedIds = new Set((workflow.approvedQualityRules ?? []).map((rule) => rule.rule_id));
+  const columns = workflow.sourceColumns ?? [];
+  const [manualType, setManualType] = useState('NOT_NULL');
+  const [manualDimension, setManualDimension] = useState<QualityDimension>('COMPLETENESS');
+  const [manualColumn, setManualColumn] = useState(columns[0]?.name ?? '');
+  const [manualSeverity, setManualSeverity] = useState('MEDIUM');
+  const [manualAction, setManualAction] = useState<QualityRuntimeAction>('WARN');
+  const [warningThreshold, setWarningThreshold] = useState(0);
+  const [criticalThreshold, setCriticalThreshold] = useState(1);
+  const [qualityNlIntent, setQualityNlIntent] = useState('');
+
+  function addManual() {
+    if (!manualColumn) return;
+    if (criticalThreshold < warningThreshold) return;
+    const ruleName = `${manualColumn}_${manualType.toLowerCase()}`;
+    onAddManualRule({
+      rule_id: `qr_manual_${ruleName}`,
+      name: ruleName,
+      version: 1,
+      dimension: manualDimension,
+      rule_type: manualType,
+      columns: [manualColumn],
+      parameters: {},
+      warning_threshold: warningThreshold,
+      critical_threshold: criticalThreshold,
+      severity: manualSeverity,
+      runtime_action: manualAction,
+      evidence: 'Regla creada manualmente en Quality Rule Designer.',
+      confidence: null,
+      source: 'MANUAL',
+      status: 'PENDING_APPROVAL',
+      active: true,
+      approved_by: null,
+      approved_at: null,
+    });
+  }
 
   return (
     <section className="card">
@@ -1795,19 +2141,67 @@ function RulesStep({
       </div>
 
       <div className="sprintNote">
-        <strong>Fallback deterministico</strong>
+        <strong>Quality Rule Designer gobernado</strong>
         <span>
-          {toBackendQualityRules(workflow).length} reglas base disponibles si el agente no responde.
-          El sistema nunca aprueba automáticamente una recomendación.
+          AI y reglas manuales usan el mismo contrato, permanecen PENDING_APPROVAL y solo se
+          vuelven ejecutables después del Quality Review.
         </span>
       </div>
+
+      <div className="validationBox">
+        <strong>Regla en lenguaje natural</strong>
+        <label className="field">
+          <span>Describe la regla que quieres controlar</span>
+          <textarea
+            rows={3}
+            value={qualityNlIntent}
+            placeholder="Ejemplo: monto_total debe estar entre 0 y 100000"
+            onChange={(event) => setQualityNlIntent(event.target.value)}
+          />
+        </label>
+        <div className="actions">
+          <button onClick={() => onGenerateQualityNl(qualityNlIntent)}>Interpretar regla con AI</button>
+        </div>
+        {qualityNlProposal && (
+          <article className="checkOk">
+            <strong>{qualityNlInterpretation ?? 'Entendí tu regla así:'}</strong>
+            <span>{qualityNlProposal.dimension} · {qualityNlProposal.rule_type} · {qualityNlProposal.columns.join(', ')}</span>
+            <small>Gate {qualityNlProposal.runtime_action} · Origen DERIVED_NL · Estado PENDING_APPROVAL</small>
+            <div className="actions">
+              <button className="primary" onClick={() => { onConfirmQualityNl(); setQualityNlIntent(''); }}>Confirmar regla interpretada</button>
+            </div>
+          </article>
+        )}
+        <small>El texto natural es evidencia de intención; solo el contrato estructurado validado puede aprobarse.</small>
+      </div>
+
+      <div className="formGrid three">
+        <ContractSelectField label="Tipo de regla" value={manualType}
+          options={['NOT_NULL', 'UNIQUE', 'ALLOWED_VALUES', 'VALUE_RANGE', 'REGEX']} onChange={setManualType} />
+        <ContractSelectField label="Dimensión" value={manualDimension}
+          options={['COMPLETENESS', 'UNIQUENESS', 'VALIDITY', 'CONSISTENCY', 'REFERENTIAL', 'TIMELINESS', 'AGGREGATE', 'BUSINESS']}
+          onChange={(value) => setManualDimension(value as QualityDimension)} />
+        <ContractSelectField label="Columna" value={manualColumn}
+          options={columns.map((column) => column.name)} onChange={setManualColumn} />
+        <ContractSelectField label="Severidad" value={manualSeverity}
+          options={['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']} onChange={setManualSeverity} />
+        <ContractSelectField label="Runtime action" value={manualAction}
+          options={['OBSERVE_ONLY', 'WARN', 'QUARANTINE', 'BLOCK_LOAD']}
+          onChange={(value) => setManualAction(value as QualityRuntimeAction)} />
+        <label className="field"><span>Warning threshold</span><input type="number" min="0" value={warningThreshold}
+          onChange={(event) => setWarningThreshold(Number(event.target.value))} /></label>
+        <label className="field"><span>Critical threshold</span><input type="number" min="0" value={criticalThreshold}
+          onChange={(event) => setCriticalThreshold(Number(event.target.value))} /></label>
+      </div>
+      <div className="actions"><button onClick={addManual}>Agregar regla manual</button></div>
+      {criticalThreshold < warningThreshold && <small className="riskText">Critical threshold debe ser mayor o igual que warning.</small>}
 
       {proposals.length ? (
         <div className="agentRuleList">
           {proposals.map((proposal, index) => {
             const backendRule = proposalToBackendRule(proposal);
-            const ruleName = String(backendRule.rule_name);
-            const approved = approvedNames.has(ruleName);
+            const ruleName = backendRule.name;
+            const approved = approvedIds.has(backendRule.rule_id);
             return (
               <article key={`${ruleName}-${index}`} className={approved ? 'approved' : ''}>
                 <label>
@@ -1837,11 +2231,23 @@ function RulesStep({
         </div>
       )}
 
+      {!!workflow.approvedQualityRules?.length && (
+        <div className="validationBox">
+          <strong>Reglas seleccionadas para aprobación</strong>
+          {workflow.approvedQualityRules.map((rule) => (
+            <article key={rule.rule_id} className="checkOk">
+              <strong>{rule.dimension} · {rule.name}</strong>
+              <span>{rule.rule_type} sobre {rule.columns.join(', ') || 'nivel tabla'} · {rule.severity}</span>
+              <small>Gate: {rule.runtime_action} · Warning {rule.warning_threshold} · Critical {rule.critical_threshold} · Origen {rule.source}</small>
+              <button className="dangerText" onClick={() => onRemoveRule(rule.rule_id)}>Quitar</button>
+            </article>
+          ))}
+        </div>
+      )}
       <p className="catalogStatus">
-        Aprobadas: {workflow.approvedQualityRules?.length ?? 0} · Workflow version backend:{' '}
-        {currentVersion(workflow)}
+        Seleccionadas: {workflow.approvedQualityRules?.length ?? 0} · Quality Rules v{workflow.qualityRulesVersion ?? 'pendiente'} · Workflow v{currentVersion(workflow)}
       </p>
-      <button className="primary" onClick={onNext}>Confirmar reglas aprobadas</button>
+      <button className="primary" onClick={onNext}>Confirmar reglas seleccionadas</button>
     </section>
   );
 }
@@ -1858,7 +2264,7 @@ function ArtifactsStep({
   onNext: () => void;
 }) {
   const generated = workflow.generatedArtifacts ?? [];
-  const displayArtifacts = generated.length
+  const displayArtifacts: GeneratedArtifact[] = generated.length
     ? generated
     : artifacts.map((artifactType) => ({
         artifact_id: undefined,
@@ -1898,12 +2304,22 @@ function ArtifactsStep({
             : 'Revisa y aprueba las reglas antes de crear artefactos.'}
         </span>
       </div>
+      <div className="resultMetrics">
+        <article><span>Workflow</span><strong>v{workflow.version ?? 1}</strong></article>
+        <article><span>Mapping</span><strong>v{workflow.mappingVersion ?? 1}</strong></article>
+        <article><span>Spec</span><strong>{workflow.specId ?? 'Pendiente'}</strong></article>
+        <article><span>Package</span><strong>{workflow.packageVersion ? `v${workflow.packageVersion}` : 'Pendiente'}</strong></article>
+      </div>
       <div className="artifactGrid">
         {displayArtifacts.map((artifact) => (
           <article key={artifact.artifact_id ?? artifact.artifact_type}>
             <strong>{artifact.artifact_type}</strong>
             <span>{artifact.artifact_name}</span>
             <em>{artifact.generation_status ?? 'GENERATED'}</em>
+            <small>Versión: {artifact.artifact_version ? `v${artifact.artifact_version}` : 'N/A'}</small>
+            <small>Validación: {artifact.validation_status ?? 'PENDIENTE'}</small>
+            <small title={artifact.storage_uri ?? undefined}>Storage: {artifact.storage_uri ?? 'Pendiente'}</small>
+            <small title={artifact.content_hash ?? undefined}>Hash: {artifact.content_hash ?? 'Pendiente'}</small>
             {generated.length > 0 && (
               <button onClick={() => onDownload(artifact)}>Descargar</button>
             )}

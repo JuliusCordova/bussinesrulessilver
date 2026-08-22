@@ -82,8 +82,14 @@ class DataprocLauncher:
         batch_id = self.build_batch_id(execution_id)
         parent = f"projects/{self.project_id}/locations/{self.region}"
 
+        dataops_dataset = os.getenv("DATAOPS_DATASET", "dataops_control")
+        quality_evidence_table = os.getenv(
+            "SILVER_QUALITY_EVIDENCE_TABLE",
+            f"{self.project_id}.{dataops_dataset}.silver_execution_quality",
+        )
         properties = {
             "spark.dataproc.driverEnv.EXECUTION_ID": execution_id,
+            "spark.dataproc.driverEnv.QUALITY_EVIDENCE_TABLE": quality_evidence_table,
         }
         if runtime_watermark is not None:
             if runtime_watermark.tzinfo is None or runtime_watermark.utcoffset() is None:

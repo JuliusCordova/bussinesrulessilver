@@ -35,12 +35,18 @@ _SUPPORTED_COMPARISON_OPERATORS = {
     "LESS_THAN",
     "LESS_THAN_OR_EQUAL",
 }
+_SUPPORTED_RUNTIME_ACTIONS = {
+    "OBSERVE_ONLY",
+    "WARN",
+    "QUARANTINE",
+    "BLOCK_LOAD",
+}
 
 
 class ExecutionArtifactGeneratorService:
     """Generates deterministic executable artifacts for Bronze-to-Silver refinement."""
 
-    template_version = "1.4.0"
+    template_version = "1.5.0"
 
     @staticmethod
     def _identifier(value: str, label: str) -> str:
@@ -82,8 +88,23 @@ class ExecutionArtifactGeneratorService:
             raise ValueError(f"Quality rule {index} debe ser un objeto")
 
         data = dict(rule)
-        parameters = dict(data.get("rule_parameters") or {})
+        parameters = dict(data.get("parameters") or data.get("rule_parameters") or {})
         rule_type = str(data.get("rule_type") or "").strip().upper()
+        if rule_type == "REGEX":
+            rule_type = "REGEX_MATCH"
+            if parameters.get("pattern") is not None and parameters.get("regex") is None:
+                parameters["regex"] = parameters["pattern"]
+        if rule_type == "VALUE_RANGE":
+            if parameters.get("min") is not None and parameters.get("min_value") is None:
+                parameters["min_value"] = parameters["min"]
+            if parameters.get("max") is not None and parameters.get("max_value") is None:
+                parameters["max_value"] = parameters["max"]
+
+        governed_columns = data.get("columns")
+        if isinstance(governed_columns, list) and governed_columns:
+            data.setdefault("column_name", governed_columns[0])
+            if len(governed_columns) > 1:
+                data.setdefault("comparison_column", governed_columns[1])
 
         # Backward compatibility with the first generated-script contract.
         if not rule_type:
@@ -157,6 +178,22 @@ class ExecutionArtifactGeneratorService:
                 "critical_threshold debe ser mayor o igual a warning_threshold"
             )
 
+        status = str(data.get("status") or "").strip().upper()
+        if status and status != "APPROVED":
+            raise ValueError(
+                f"Quality rule {index} no está aprobada para ejecución: {status}"
+            )
+
+        runtime_action = str(data.get("runtime_action") or "BLOCK_LOAD").strip().upper()
+        if runtime_action not in _SUPPORTED_RUNTIME_ACTIONS:
+            raise ValueError(
+                f"Quality rule {index} usa runtime_action no soportado: {runtime_action}"
+            )
+        if rule_type in {"ROW_COUNT_MIN", "FRESHNESS_MAX_HOURS"} and runtime_action == "QUARANTINE":
+            raise ValueError(
+                f"Quality rule {index} usa QUARANTINE en una regla de nivel tabla"
+            )
+
         default_name = f"{rule_type.lower()}_{column_name or 'table'}"
         return {
             "rule_name": str(
@@ -179,7 +216,15 @@ class ExecutionArtifactGeneratorService:
                 or data.get("severity")
                 or "MEDIUM"
             ).upper(),
-            "active_flag": bool(data.get("active_flag", True)),
+            "runtime_action": runtime_action,
+            "rule_id": data.get("rule_id"),
+            "rule_version": data.get("version", 1),
+            "source": data.get("source"),
+            "status": status or None,
+            "evidence": data.get("evidence") or data.get("agent_evidence"),
+            "confidence": data.get("confidence") if data.get("confidence") is not None else data.get("agent_confidence"),
+            "metadata": data.get("metadata") or {},
+            "active_flag": bool(data.get("active_flag", data.get("active", True))),
         }
 
     @classmethod
@@ -255,6 +300,7 @@ PHYSICAL_DESIGN = json.loads(__PHYSICAL_DESIGN_JSON__)
 REQUIRED_COLUMNS = __REQUIRED_COLUMNS__
 QUALITY_RULES = json.loads(__QUALITY_RULES_JSON__)
 EXECUTION_ID = os.getenv("EXECUTION_ID", "unknown")
+QUALITY_EVIDENCE_TABLE = os.getenv("QUALITY_EVIDENCE_TABLE")
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("silver-refinement")
@@ -310,8 +356,8 @@ def _classify_rule(
     return "PASS"
 
 
-def _decorate_failure_frame(df, source_columns: list[str], rule: dict, status: str):
-    row_hash = F.sha2(
+def _row_hash_expression(source_columns: list[str]):
+    return F.sha2(
         F.concat_ws(
             "||",
             *[
@@ -321,13 +367,17 @@ def _decorate_failure_frame(df, source_columns: list[str], rule: dict, status: s
         ),
         256,
     )
+
+
+def _decorate_failure_frame(df, source_columns: list[str], rule: dict, status: str):
     return (
-        df.withColumn("_dq_row_hash", row_hash)
+        df.withColumn("_dq_row_hash", _row_hash_expression(source_columns))
         .withColumn("_dq_execution_id", F.lit(EXECUTION_ID))
         .withColumn("_dq_spec_id", F.lit(SPEC_ID))
         .withColumn("_dq_rule_name", F.lit(rule["rule_name"]))
         .withColumn("_dq_rule_type", F.lit(rule["rule_type"]))
         .withColumn("_dq_rule_status", F.lit(status))
+        .withColumn("_dq_runtime_action", F.lit(rule.get("runtime_action") or "BLOCK_LOAD"))
         .withColumn("_dq_severity", F.lit(rule.get("severity_level") or "MEDIUM"))
         .withColumn(
             "_dq_rule_parameters",
@@ -465,13 +515,33 @@ def _combine_failure_frames(frames):
     return combined
 
 
+def _exclude_quarantined_rows(df, quarantine_df, source_columns: list[str]):
+    if quarantine_df is None:
+        return df
+    quarantine_hashes = quarantine_df.select(
+        F.col("_dq_row_hash").alias("__dq_excluded_hash")
+    ).distinct()
+    return (
+        df.withColumn("__dq_candidate_hash", _row_hash_expression(source_columns))
+        .join(
+            quarantine_hashes,
+            F.col("__dq_candidate_hash") == F.col("__dq_excluded_hash"),
+            "left_anti",
+        )
+        .drop("__dq_candidate_hash")
+    )
+
+
 def validate_quality(df):
     total_rows = df.count()
     source_columns = list(df.columns)
     rule_results = []
     blocking_failure_frames = []
+    quarantine_failure_frames = []
     warning_failures = 0
-    table_level_failures = 0
+    observed_failures = 0
+    table_level_blocking_failures = 0
+    table_level_warnings = 0
     scores = []
 
     for column_name in REQUIRED_COLUMNS:
@@ -491,6 +561,7 @@ def validate_quality(df):
             "rule_type": "NOT_NULL",
             "column_name": column_name,
             "severity_level": "CRITICAL",
+            "runtime_action": "BLOCK_LOAD",
             "rule_parameters": {},
         }
         rule_results.append(
@@ -514,11 +585,17 @@ def validate_quality(df):
 
         table_result = _table_rule_result(df, rule, total_rows)
         if table_result is not None:
-            result = {**rule, **table_result, "implicit": False}
+            action = str(rule.get("runtime_action") or "BLOCK_LOAD").upper()
+            result = {**rule, **table_result, "implicit": False, "enforcement": action}
             rule_results.append(result)
             scores.append(float(table_result["score"]))
             if table_result["status"] == "FAIL":
-                table_level_failures += 1
+                if action == "BLOCK_LOAD":
+                    table_level_blocking_failures += 1
+                elif action == "WARN":
+                    table_level_warnings += 1
+                elif action == "OBSERVE_ONLY":
+                    observed_failures += int(table_result.get("failed_rows") or 0)
             continue
 
         failed_df = _row_failure_frame(df, rule)
@@ -536,6 +613,7 @@ def validate_quality(df):
         )
         score = round(max(100.0 - failed_percentage, 0.0), 4)
         scores.append(score)
+        action = str(rule.get("runtime_action") or "BLOCK_LOAD").upper()
         rule_results.append(
             {
                 **rule,
@@ -544,45 +622,114 @@ def validate_quality(df):
                 "score": score,
                 "status": status,
                 "implicit": False,
+                "enforcement": action,
             }
         )
         if status == "FAIL" and failed_rows:
-            blocking_failure_frames.append(
-                _decorate_failure_frame(failed_df, source_columns, rule, status)
-            )
+            decorated = _decorate_failure_frame(failed_df, source_columns, rule, status)
+            if action == "BLOCK_LOAD":
+                blocking_failure_frames.append(decorated)
+            elif action == "QUARANTINE":
+                quarantine_failure_frames.append(decorated)
+            elif action == "WARN":
+                warning_failures += failed_rows
+            elif action == "OBSERVE_ONLY":
+                observed_failures += failed_rows
         elif status == "WARN":
             warning_failures += failed_rows
 
-    quarantine_df = _combine_failure_frames(blocking_failure_frames)
-    quarantined_rows = 0
-    quarantine_events = 0
-    if quarantine_df is not None:
-        quarantine_events = quarantine_df.count()
-        quarantined_rows = quarantine_df.select("_dq_row_hash").distinct().count()
+    quarantine_only_df = _combine_failure_frames(quarantine_failure_frames)
+    evidence_df = _combine_failure_frames(blocking_failure_frames + quarantine_failure_frames)
+    quarantine_events = evidence_df.count() if evidence_df is not None else 0
+    quarantined_rows = (
+        evidence_df.select("_dq_row_hash").distinct().count()
+        if evidence_df is not None
+        else 0
+    )
+    continued_quarantined_rows = (
+        quarantine_only_df.select("_dq_row_hash").distinct().count()
+        if quarantine_only_df is not None
+        else 0
+    )
 
-    has_blocking_failure = bool(blocking_failure_frames) or table_level_failures > 0
-    has_warning = any(item.get("status") == "WARN" for item in rule_results)
-    outcome = "FAIL" if has_blocking_failure else ("WARN" if has_warning else "PASS")
+    has_blocking_failure = bool(blocking_failure_frames) or table_level_blocking_failures > 0
+    has_quarantine = bool(quarantine_failure_frames)
+    has_warning = warning_failures > 0 or table_level_warnings > 0 or any(
+        item.get("status") == "WARN" for item in rule_results
+    )
+    if has_blocking_failure:
+        outcome = "BLOCK_LOAD"
+    elif has_quarantine:
+        outcome = "QUARANTINE"
+    elif has_warning:
+        outcome = "WARN"
+    elif observed_failures > 0:
+        outcome = "OBSERVE_ONLY"
+    else:
+        outcome = "PASS"
     gate_status = "FAILED" if has_blocking_failure else "PASSED"
     quality_score = round(sum(scores) / len(scores), 4) if scores else 100.0
+    silver_output_df = _exclude_quarantined_rows(df, quarantine_only_df, source_columns)
 
     return (
         {
             "status": gate_status,
             "outcome": outcome,
+            "runtime_decision": outcome,
             "quality_score": quality_score,
             "total_rows": total_rows,
             "failed_rows": quarantined_rows,
             "warning_rows": warning_failures,
-            "table_level_failures": table_level_failures,
+            "observed_failure_rows": observed_failures,
+            "table_level_blocking_failures": table_level_blocking_failures,
+            "table_level_warnings": table_level_warnings,
             "quarantined_rows": quarantined_rows,
+            "continued_quarantined_rows": continued_quarantined_rows,
             "quarantine_events": quarantine_events,
             "quarantine_table": QUARANTINE_TABLE,
             "rule_results": rule_results,
             "configured_rules": QUALITY_RULES,
         },
-        quarantine_df,
+        evidence_df,
+        silver_output_df,
     )
+
+
+def persist_quality_evidence(spark: SparkSession, quality: dict) -> None:
+    if not QUALITY_EVIDENCE_TABLE:
+        raise ValueError("QUALITY_EVIDENCE_TABLE es obligatorio para ejecución gobernada")
+
+    recorded_at = datetime.now(timezone.utc)
+    row = {
+        "execution_id": EXECUTION_ID,
+        "spec_id": SPEC_ID,
+        "mapping_version": int(MAPPING_VERSION),
+        "recorded_at": recorded_at,
+        "gate_status": str(quality.get("status") or "UNKNOWN"),
+        "runtime_decision": str(quality.get("runtime_decision") or quality.get("outcome") or "UNKNOWN"),
+        "quality_score": float(quality.get("quality_score") or 0.0),
+        "total_rows": int(quality.get("total_rows") or 0),
+        "failed_rows": int(quality.get("failed_rows") or 0),
+        "warning_rows": int(quality.get("warning_rows") or 0),
+        "observed_failure_rows": int(quality.get("observed_failure_rows") or 0),
+        "quarantined_rows": int(quality.get("quarantined_rows") or 0),
+        "continued_quarantined_rows": int(quality.get("continued_quarantined_rows") or 0),
+        "quarantine_events": int(quality.get("quarantine_events") or 0),
+        "table_level_blocking_failures": int(quality.get("table_level_blocking_failures") or 0),
+        "table_level_warnings": int(quality.get("table_level_warnings") or 0),
+        "quarantine_table": str(quality.get("quarantine_table") or ""),
+        "rule_results_json": json.dumps(quality.get("rule_results") or [], ensure_ascii=False, default=str),
+        "configured_rules_json": json.dumps(quality.get("configured_rules") or [], ensure_ascii=False, default=str),
+    }
+    evidence_df = spark.createDataFrame([row])
+    (
+        evidence_df.write.format("bigquery")
+        .option("table", QUALITY_EVIDENCE_TABLE)
+        .option("writeMethod", "direct")
+        .mode("append")
+        .save()
+    )
+
 
 
 def calculate_next_watermark(df):
@@ -702,8 +849,9 @@ def main() -> dict:
         bronze_df = read_bronze(spark)
         rows_read = bronze_df.count()
         silver_df = transform(bronze_df)
-        quality, quarantine_df = validate_quality(silver_df)
+        quality, quarantine_df, silver_output_df = validate_quality(silver_df)
         next_watermark = calculate_next_watermark(bronze_df)
+        persist_quality_evidence(spark, quality)
 
         if quality["status"] != "PASSED":
             if quarantine_df is not None and quality["quarantine_events"] > 0:
@@ -726,11 +874,14 @@ def main() -> dict:
             }
             logger.info(json.dumps(result, ensure_ascii=False))
             raise ValueError(
-                "Quality gate failed; Silver write blocked and failing rows quarantined"
+                "Quality gate BLOCK_LOAD; Silver write blocked and failing rows persisted as evidence"
             )
 
-        write_silver(spark, silver_df)
-        rows_written = silver_df.count()
+        if quarantine_df is not None and quality["quarantine_events"] > 0:
+            write_quarantine(quarantine_df)
+
+        write_silver(spark, silver_output_df)
+        rows_written = silver_output_df.count()
         result = {
             "spec_id": SPEC_ID,
             "execution_id": EXECUTION_ID,

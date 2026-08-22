@@ -4,10 +4,13 @@ import os
 
 from google.adk.agents import LlmAgent, SequentialAgent
 
+from .finops_telemetry import build_finops_callbacks
 from .tools import (
     build_notebook_blueprint,
     profile_selected_table,
     recommend_column_mappings,
+    validate_derived_nl_mapping_proposal,
+    validate_quality_nl_rule_proposal,
     quality_rule_evidence,
     validate_business_rules,
 )
@@ -31,10 +34,22 @@ def _model() -> str:
     return os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 
+def _telemetry(canonical_agent_name: str, model_name: str) -> dict:
+    before_model, after_model = build_finops_callbacks(
+        canonical_agent_name=canonical_agent_name,
+        model_name=model_name,
+    )
+    return {
+        "before_model_callback": before_model,
+        "after_model_callback": after_model,
+    }
+
+
 def build_table_profiler_agent() -> LlmAgent:
+    model = _model()
     return LlmAgent(
         name="silver_table_profiler",
-        model=_model(),
+        model=model,
         description="Perfila la tabla BigQuery seleccionada con métricas verificables.",
         instruction=(
             "Solicitud gobernada: {request_json}. "
@@ -44,49 +59,60 @@ def build_table_profiler_agent() -> LlmAgent:
         ),
         tools=[profile_selected_table],
         output_key="table_profile",
+        **_telemetry("table-profiler", model),
     )
 
 
 def build_mapping_advisor_agent() -> LlmAgent:
+    model = _model()
     return LlmAgent(
         name="silver_mapping_advisor",
-        model=_model(),
+        model=model,
         description="Recomienda mapping editable desde el schema real y perfil BigQuery.",
         instruction=(
             "Solicitud gobernada: {request_json}. Perfil: {table_profile?}. "
-            "Usa recommend_column_mappings con las columnas reales de la solicitud. "
-            "No inventes columnas ni expresiones. Conserva source, target, tipo, "
-            "transformacion, confianza, razon y riesgo. Toda recomendacion queda "
-            "PENDING_APPROVAL. Devuelve exclusivamente JSON valido."
+            "Si context comienza con DERIVED_NL:, interpreta exactamente una derivación "
+            "usando solo columnas reales. No generes SQL, Python, PySpark ni expresiones libres. "
+            "Construye únicamente un contrato transformation estructurado y llama siempre "
+            "validate_derived_nl_mapping_proposal con columns_json, la regla natural exacta y "
+            "proposal_json. Devuelve exclusivamente el JSON retornado por esa tool. "
+            "Para solicitudes normales usa recommend_column_mappings. Toda recomendación queda "
+            "PENDING_APPROVAL y requiere confirmación humana."
         ),
-        tools=[recommend_column_mappings],
+        tools=[recommend_column_mappings, validate_derived_nl_mapping_proposal],
         output_key="mapping_recommendations",
+        **_telemetry("mapping-advisor", model),
     )
 
 
 def build_quality_rule_advisor_agent() -> LlmAgent:
+    model = _model()
     return LlmAgent(
         name="silver_quality_rule_advisor",
-        model=_model(),
+        model=model,
         description="Recomienda reglas de calidad basadas en perfilamiento.",
         instruction=(
             "Solicitud: {request_json}. Perfil previo: {table_profile?}. "
-            "Si el perfil no está disponible, obtenlo con profile_selected_table. "
-            "Luego llama quality_rule_evidence usando el perfil JSON y "
-            "{business_keys_json}. Los campos críticos con nulos deben producir "
-            "NOT_NULL en estado FAILING; las claves deben evaluar NOT_NULL y UNIQUE. "
-            "Propón solo reglas con evidencia, déjalas PENDING_APPROVAL y devuelve "
-            "exclusivamente JSON válido."
+            "Si context comienza con QUALITY_NL:, interpreta exactamente una regla de calidad "
+            "usando solo columnas reales y uno de NOT_NULL, UNIQUE, ALLOWED_VALUES, VALUE_RANGE o REGEX. "
+            "No generes SQL, Python, PySpark ni expresiones libres. Construye solo un contrato estructurado "
+            "y llama siempre validate_quality_nl_rule_proposal con columns_json, la regla natural exacta "
+            "y proposal_json. Devuelve exclusivamente el JSON retornado por esa tool. "
+            "Para solicitudes normales, si falta perfil obtenlo con profile_selected_table y luego llama "
+            "quality_rule_evidence usando el perfil JSON y {business_keys_json}. Toda propuesta queda "
+            "PENDING_APPROVAL y requiere confirmación humana."
         ),
-        tools=[profile_selected_table, quality_rule_evidence],
+        tools=[profile_selected_table, quality_rule_evidence, validate_quality_nl_rule_proposal],
         output_key="quality_rule_proposals",
+        **_telemetry("quality-rule-advisor", model),
     )
 
 
 def build_business_rule_validator_agent() -> LlmAgent:
+    model = _model()
     return LlmAgent(
         name="silver_business_rule_validator",
-        model=_model(),
+        model=model,
         description="Valida reglas contra el schema y contrato ejecutable.",
         instruction=(
             "Perfil: {table_profile?}. Reglas: {business_rules_json}. "
@@ -98,13 +124,15 @@ def build_business_rule_validator_agent() -> LlmAgent:
         ),
         tools=[profile_selected_table, validate_business_rules],
         output_key="business_rule_validation",
+        **_telemetry("business-rule-validator", model),
     )
 
 
 def build_notebook_generator_agent() -> LlmAgent:
+    model = _model()
     return LlmAgent(
         name="silver_notebook_generator",
-        model=_model(),
+        model=model,
         description="Genera un blueprint de notebook gobernado y ejecutable.",
         instruction=(
             "Especificación: {notebook_spec_json}. Validación de reglas: "
@@ -116,6 +144,7 @@ def build_notebook_generator_agent() -> LlmAgent:
         ),
         tools=[build_notebook_blueprint],
         output_key="notebook_blueprint",
+        **_telemetry("notebook-generator", model),
     )
 
 

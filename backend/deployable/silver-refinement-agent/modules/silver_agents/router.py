@@ -20,7 +20,13 @@ from .governance_repository import AgentGovernanceRepository
 from .models import AgentDescriptor, AgentRunRequest, AgentRunResponse
 from .profile_report import ProfileReportService
 from .service import SilverAgentRunner
-from .tools import profile_selected_table, quality_rule_evidence, recommend_column_mappings
+from .tools import (
+    profile_selected_table,
+    quality_rule_evidence,
+    recommend_column_mappings,
+    validate_derived_nl_mapping_proposal,
+    validate_quality_nl_rule_proposal,
+)
 
 
 router = APIRouter(prefix="/silver-agents", tags=["silver-agents"])
@@ -45,10 +51,11 @@ _PURPOSES = {
 
 _TOOLS = {
     "table-profiler": ["profile_selected_table"],
-    "mapping-advisor": ["profile_selected_table", "recommend_column_mappings"],
+    "mapping-advisor": ["profile_selected_table", "recommend_column_mappings", "validate_derived_nl_mapping_proposal"],
     "quality-rule-advisor": [
         "profile_selected_table",
         "quality_rule_evidence",
+        "validate_quality_nl_rule_proposal",
     ],
     "business-rule-validator": [
         "profile_selected_table",
@@ -133,7 +140,12 @@ async def run_silver_agent(
         f"{request.target_dataset}.{request.target_table}"
     )
     try:
-        result = await SilverAgentRunner().run(factory(), request)
+        result = await SilverAgentRunner().run(
+            factory(),
+            request,
+            user_id=request.requested_by or "business-rules-silver",
+            trace_id=run_id,
+        )
         if agent_name in {"table-profiler", "mapping-advisor", "quality-rule-advisor"}:
             profile = profile_selected_table(
                 request.project_id,
@@ -143,15 +155,47 @@ async def run_silver_agent(
             if agent_name == "table-profiler":
                 result.evidence = profile
             elif agent_name == "mapping-advisor":
-                result.evidence = recommend_column_mappings(
-                    json.dumps(request.columns, ensure_ascii=False),
-                    json.dumps(profile, ensure_ascii=False),
-                )
+                context = (request.context or "").strip()
+                if context.startswith("DERIVED_NL:"):
+                    natural_rule = context.split(":", 1)[1].strip()
+                    cleaned = result.output.strip()
+                    if cleaned.startswith("```"):
+                        cleaned = cleaned.replace("```json", "", 1).replace("```", "", 1).strip()
+                    parsed = json.loads(cleaned)
+                    if not isinstance(parsed, dict):
+                        raise ValueError("El mapping-advisor no devolvió un objeto JSON DERIVED_NL")
+                    candidate = parsed.get("proposal") if isinstance(parsed.get("proposal"), dict) else parsed
+                    result.evidence = validate_derived_nl_mapping_proposal(
+                        json.dumps(request.columns, ensure_ascii=False),
+                        natural_rule,
+                        json.dumps(candidate, ensure_ascii=False),
+                    )
+                else:
+                    result.evidence = recommend_column_mappings(
+                        json.dumps(request.columns, ensure_ascii=False),
+                        json.dumps(profile, ensure_ascii=False),
+                    )
             else:
-                result.evidence = quality_rule_evidence(
-                    json.dumps(profile, ensure_ascii=False),
-                    json.dumps(request.business_keys, ensure_ascii=False),
-                )
+                context = (request.context or "").strip()
+                if context.startswith("QUALITY_NL:"):
+                    natural_rule = context.split(":", 1)[1].strip()
+                    cleaned = result.output.strip()
+                    if cleaned.startswith("```"):
+                        cleaned = cleaned.replace("```json", "", 1).replace("```", "", 1).strip()
+                    parsed = json.loads(cleaned)
+                    if not isinstance(parsed, dict):
+                        raise ValueError("El quality-rule-advisor no devolvió un objeto JSON QUALITY_NL")
+                    candidate = parsed.get("proposal") if isinstance(parsed.get("proposal"), dict) else parsed
+                    result.evidence = validate_quality_nl_rule_proposal(
+                        json.dumps(request.columns, ensure_ascii=False),
+                        natural_rule,
+                        json.dumps(candidate, ensure_ascii=False),
+                    )
+                else:
+                    result.evidence = quality_rule_evidence(
+                        json.dumps(profile, ensure_ascii=False),
+                        json.dumps(request.business_keys, ensure_ascii=False),
+                    )
         finished_at = datetime.now(timezone.utc)
         governance.save_run(
             run_id=run_id,

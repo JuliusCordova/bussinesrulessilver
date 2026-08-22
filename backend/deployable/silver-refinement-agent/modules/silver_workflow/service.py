@@ -14,11 +14,17 @@ from .models import (
     ConfirmWorkflowSourceRequest,
     CreateSilverWorkflowRequest,
     GenerateBusinessRulesRequest,
+    MappingImpactRequest,
+    MappingImpactResponse,
     ReviewQualityRequest,
+    QualityRuleStatus,
     SaveBusinessRulesDraftRequest,
+    SaveSilverMappingRequest,
     SaveSilverSpecificationRequest,
     SilverWorkflowListResponse,
     SilverWorkflowRecord,
+    SilverWorkflowVersionListResponse,
+    SilverWorkflowVersionSummary,
     WorkflowAction,
     WorkflowRepositoryHealth,
     WorkflowStatus,
@@ -56,6 +62,33 @@ class SilverWorkflowService:
 
     def get_business_rules(self, workflow_id: str) -> BusinessRulesSection:
         return self.get(workflow_id).business_rules
+
+    def list_versions(self, workflow_id: str) -> SilverWorkflowVersionListResponse:
+        current = self.get(workflow_id)
+        snapshots = self.repository.list_versions(workflow_id)
+        versions: list[SilverWorkflowVersionSummary] = []
+        for record in snapshots:
+            artifact_package = record.artifact_package or {}
+            execution = record.execution or {}
+            raw_package_version = artifact_package.get("package_version") or execution.get("package_version")
+            versions.append(SilverWorkflowVersionSummary(
+                workflow_id=record.workflow_id,
+                workflow_version=record.version,
+                mapping_version=record.mapping_version,
+                quality_rules_version=record.quality_rules_version,
+                spec_id=record.spec_id,
+                package_version=raw_package_version if isinstance(raw_package_version, int) else None,
+                execution_id=record.execution_id,
+                status=record.status,
+                updated_at=record.updated_at,
+                lifecycle_status="CURRENT" if record.version == current.version else "SUPERSEDED",
+            ))
+        return SilverWorkflowVersionListResponse(
+            workflow_id=workflow_id,
+            current_version=current.version,
+            total=len(versions),
+            versions=versions,
+        )
 
     def list(self, *, limit: int, status: WorkflowStatus | None) -> SilverWorkflowListResponse:
         records = [self._with_actions(record) for record in self.repository.list(limit=limit, status=status)]
@@ -141,6 +174,123 @@ class SilverWorkflowService:
             updated_at=confirmed_at,
         ))
 
+    @staticmethod
+    def _mapping_shape(raw: dict[str, object]) -> dict[str, object]:
+        return {
+            "name": raw.get("name") or raw.get("target_column"),
+            "data_type": raw.get("data_type") or raw.get("target_type"),
+            "nullable": raw.get("nullable", True),
+            "source_column": raw.get("source_column") or raw.get("sourceColumn"),
+            "source_columns": raw.get("source_columns") or raw.get("sourceColumns") or [],
+            "transformation": raw.get("transformation") or raw.get("transformation_type") or raw.get("transformationType"),
+            "derivation_mode": raw.get("derivation_mode") or raw.get("derivationMode"),
+            "natural_rule": raw.get("natural_rule") or raw.get("naturalRule"),
+        }
+
+    @staticmethod
+    def _quality_rule_columns(rule: dict[str, object]) -> set[str]:
+        columns: set[str] = set()
+        for key in ("column_name", "column", "columns", "source_columns", "target_columns"):
+            value = rule.get(key)
+            if isinstance(value, str) and value:
+                columns.add(value)
+            elif isinstance(value, list):
+                columns.update(str(item) for item in value if item)
+        return columns
+
+    def analyze_mapping_impact(self, workflow_id: str, request: MappingImpactRequest) -> MappingImpactResponse:
+        current = self._require_version(workflow_id, request.expected_version)
+        if not current.source_confirmed or current.schema_context is None:
+            raise WorkflowStateConflictError("La fuente y el esquema deben estar confirmados antes de analizar el mapping")
+
+        previous: dict[str, dict[str, object]] = {}
+        for raw in current.mapping_rules:
+            shape = self._mapping_shape(raw)
+            if shape.get("name"):
+                previous[str(shape["name"])] = shape
+        proposed = {
+            column.name: self._mapping_shape(column.model_dump(mode="json"))
+            for column in request.columns
+        }
+
+        added = sorted(set(proposed) - set(previous))
+        removed = sorted(set(previous) - set(proposed))
+        modified = sorted(
+            name for name in set(previous) & set(proposed)
+            if previous[name] != proposed[name]
+        )
+        changed_columns = set(added) | set(removed) | set(modified)
+
+        affected_rules: list[str] = []
+        for rule in current.quality_rules:
+            if isinstance(rule, dict) and self._quality_rule_columns(rule) & changed_columns:
+                affected_rules.append(str(rule.get("rule_name") or rule.get("name") or "regla_sin_nombre"))
+
+        has_changes = bool(changed_columns)
+        invalidations = [
+            "SPECIFICATION", "QUALITY_REVIEW", "ARTIFACT_PACKAGE",
+            "GOVERNANCE", "EXECUTION", "VALIDATION",
+        ] if has_changes else []
+        if removed or affected_rules:
+            impact_level = "HIGH"
+        elif modified:
+            impact_level = "MEDIUM"
+        elif added:
+            impact_level = "LOW"
+        else:
+            impact_level = "NONE"
+
+        summary = (
+            f"{len(added)} agregadas, {len(removed)} eliminadas, {len(modified)} modificadas; "
+            f"{len(affected_rules)} reglas de calidad afectadas."
+            if has_changes else "No se detectaron cambios materiales frente al mapping persistido."
+        )
+        return MappingImpactResponse(
+            workflow_id=workflow_id,
+            current_workflow_version=current.version,
+            current_mapping_version=current.mapping_version,
+            proposed_mapping_version=(current.mapping_version or 0) + 1,
+            impact_level=impact_level,
+            has_changes=has_changes,
+            added_columns=added,
+            removed_columns=removed,
+            modified_columns=modified,
+            affected_quality_rules=sorted(set(affected_rules)),
+            downstream_invalidations=invalidations,
+            summary=summary,
+        )
+
+    def save_mapping_version(self, workflow_id: str, request: SaveSilverMappingRequest) -> SilverWorkflowRecord:
+        current = self._require_version(workflow_id, request.expected_version)
+        if not current.source_confirmed or current.schema_context is None:
+            raise WorkflowStateConflictError("La fuente y el esquema deben estar confirmados antes de editar el mapping")
+        if current.business_rules.status != BusinessRuleStatus.CONFIRMED:
+            raise WorkflowStateConflictError("Las Business Rules deben estar confirmadas antes de versionar el mapping")
+        if current.status == WorkflowStatus.EXECUTING:
+            raise WorkflowStateConflictError("No se puede editar el mapping mientras el proceso está ejecutándose")
+
+        source_columns = {column.name for column in current.schema_context.columns}
+        referenced_columns = {
+            reference
+            for column in request.columns
+            for reference in ([column.source_column] if column.source_column else []) + list(column.source_columns)
+        }
+        unknown = sorted(referenced_columns - source_columns)
+        if unknown:
+            raise ValueError("Las columnas de origen no existen en el esquema confirmado: " + ", ".join(unknown))
+
+        next_mapping_version = (current.mapping_version or 0) + 1
+        return self._with_actions(self.repository.save_mapping_version(
+            workflow_id,
+            expected_version=request.expected_version,
+            mapping_version=next_mapping_version,
+            target=request.target,
+            mapping_rules=[column.model_dump(mode="json") for column in request.columns],
+            edited_by=request.edited_by,
+            change_reason=request.change_reason,
+            updated_at=datetime.now(timezone.utc),
+        ))
+
     def save_specification(self, workflow_id: str, request: SaveSilverSpecificationRequest) -> SilverWorkflowRecord:
         current = self._require_specification_step(workflow_id, expected_version=request.expected_version)
         assert current.schema_context is not None
@@ -159,17 +309,29 @@ class SilverWorkflowService:
     def review_quality(self, workflow_id: str, request: ReviewQualityRequest) -> SilverWorkflowRecord:
         current = self._require_quality_step(workflow_id, expected_version=request.expected_version)
         reviewed_at = datetime.now(timezone.utc)
+        next_quality_rules_version = (current.quality_rules_version or 0) + 1
+        approved_rules = [
+            rule.model_copy(deep=True, update={
+                "status": QualityRuleStatus.APPROVED,
+                "approved_by": request.reviewed_by,
+                "approved_at": reviewed_at,
+            }).model_dump(mode="json")
+            for rule in request.quality_rules
+            if rule.active
+        ]
         review = {
             "decision": request.decision.value,
             "reviewed_by": request.reviewed_by,
             "review_notes": request.review_notes,
             "reviewed_at": reviewed_at.isoformat(),
             "source_workflow_version": current.version,
+            "quality_rules_version": next_quality_rules_version,
+            "approved_rule_count": len(approved_rules),
         }
         return self._with_actions(self.repository.review_quality(
             workflow_id, expected_version=request.expected_version,
-            quality_rules=request.quality_rules, quality_review=review,
-            updated_at=reviewed_at,
+            quality_rules=approved_rules, quality_rules_version=next_quality_rules_version,
+            quality_review=review, updated_at=reviewed_at,
         ))
 
     def _require_business_rules_step(self, workflow_id: str, *, expected_version: int) -> SilverWorkflowRecord:

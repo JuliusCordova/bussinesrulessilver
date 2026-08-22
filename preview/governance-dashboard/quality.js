@@ -69,12 +69,16 @@
     const governed = workflows.filter((workflow) => rulesOf(workflow).length || workflow?.quality_rules_version != null);
     const rows = governed.flatMap((workflow) => rulesOf(workflow).map((rule) => ({ workflow, rule, process: processName(workflow) })));
     const approved = rows.filter(({rule}) => String(rule?.status || '').toUpperCase() === 'APPROVED');
-    const versions = governed.map((workflow) => Number(workflow?.quality_rules_version)).filter(Number.isFinite);
+    const versions = governed
+      .map((workflow) => workflow?.quality_rules_version)
+      .filter((value) => value !== null && value !== undefined && value !== '')
+      .map(Number)
+      .filter(Number.isFinite);
     const runtimeBySpec = new Map(runtimeExecutions.map((item) => [String(item.spec_id || ''), item]));
 
     setText('qualityApprovedRules', int(approved.length), '0');
     setText('qualityRulesVersion', versions.length ? `v${Math.max(...versions)}` : null);
-    setText('qualityRuleCountBadge', `${rows.length} reglas`, '0 reglas');
+    setText('qualityRuleCountBadge', `${rows.length} reglas observables`, '0 reglas observables');
     setText('overviewQualityRules', int(approved.length), '0');
     setText('overviewQualityVersion', versions.length ? `v${Math.max(...versions)}` : '—', '—');
 
@@ -84,7 +88,7 @@
           const decision = runtimeDecision(evidence) || 'SIN EVIDENCIA RUNTIME';
           return `<div class="quality-process-row"><div><strong>${esc(processName(workflow))}</strong><small>${esc(workflow.workflow_id || '')}</small></div><span>v${esc(workflow.quality_rules_version ?? '—')}</span><b class="quality-chip ${decision.toLowerCase().replaceAll('_','-')}">${esc(decision.replaceAll('_',' '))}</b></div>`;
         }).join('')
-      : '<div class="quality-empty">No hay procesos con contrato de calidad observable.</div>';
+      : '<div class="quality-empty">No hay procesos con reglas de calidad observables.</div>';
 
     $('qualityRulesTable').innerHTML = rows.length
       ? rows.slice(0, 100).map((row, index) => {
@@ -99,7 +103,7 @@
 
     const source = $('qualitySourceStatus');
     const overviewState = $('overviewQualityState');
-    const message = governed.length ? `${governed.length} procesos con contrato observable` : 'Sin contrato de calidad observable';
+    const message = governed.length ? `${governed.length} procesos con reglas observables` : 'Sin reglas de calidad observables';
     [source, overviewState].forEach((node) => {
       if (!node) return;
       node.textContent = message;

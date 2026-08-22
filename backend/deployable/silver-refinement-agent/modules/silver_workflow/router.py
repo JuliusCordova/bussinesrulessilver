@@ -21,6 +21,7 @@ from .models import (
     SaveSilverSpecificationRequest,
     SilverWorkflowListResponse,
     SilverWorkflowRecord,
+    SilverWorkflowVersionListResponse,
     WorkflowRepositoryHealth,
     WorkflowStatus,
 )
@@ -77,6 +78,16 @@ def list_workflows(limit: int = Query(default=50, ge=1, le=200), workflow_status
     result = business.workflow_service.list(limit=limit, status=workflow_status)
     business.record_success()
     return result
+
+
+@router.get("/{workflow_id}/versions", response_model=SilverWorkflowVersionListResponse)
+def list_workflow_versions(workflow_id: str, business: WorkflowBusinessOperation = Depends(require_workflow_get)) -> SilverWorkflowVersionListResponse:
+    try:
+        result = business.workflow_service.list_versions(workflow_id)
+        business.record_success(workflow_id=workflow_id)
+        return result
+    except WorkflowNotFoundError as exc:
+        raise _not_found(exc) from exc
 
 
 @router.get("/{workflow_id}/business-rules", response_model=BusinessRulesSection)

@@ -30,6 +30,15 @@ class WorkflowRepository(Protocol):
     def create(self, record: SilverWorkflowRecord) -> SilverWorkflowRecord: ...
     def get(self, workflow_id: str) -> SilverWorkflowRecord | None: ...
     def list(self, *, limit: int, status: WorkflowStatus | None = None) -> list[SilverWorkflowRecord]: ...
+    def list_versions(self, workflow_id: str) -> list[SilverWorkflowRecord]: ...
+    def list_versions(self, workflow_id: str) -> list[SilverWorkflowRecord]:
+        with self._lock:
+            if workflow_id not in self._records:
+                raise WorkflowNotFoundError(f"Workflow no encontrado: {workflow_id}")
+            snapshots = list(self._snapshots.get(workflow_id, {}).values())
+            snapshots.sort(key=lambda record: record.version, reverse=True)
+            return [deepcopy(record) for record in snapshots]
+
     def confirm_source(self, workflow_id: str, *, expected_version: int, schema_context: SchemaContextEvidence, confirmed_by: str, updated_at: datetime) -> SilverWorkflowRecord: ...
     def save_business_rules_draft(self, workflow_id: str, *, expected_version: int, section: BusinessRulesSection, authored_by: str, change_reason: str, updated_at: datetime) -> SilverWorkflowRecord: ...
     def save_business_rules_proposal(self, workflow_id: str, *, expected_version: int, section: BusinessRulesSection, generated_by: str, generation_reason: str, idempotency_key: str, updated_at: datetime) -> SilverWorkflowRecord: ...
@@ -42,6 +51,7 @@ class WorkflowRepository(Protocol):
 class InMemoryWorkflowRepository:
     def __init__(self) -> None:
         self._records: dict[str, SilverWorkflowRecord] = {}
+        self._snapshots: dict[str, dict[int, SilverWorkflowRecord]] = {}
         self._lock = RLock()
 
     @property
@@ -56,6 +66,7 @@ class InMemoryWorkflowRepository:
             if record.workflow_id in self._records:
                 raise WorkflowVersionConflictError(f"El workflow ya existe: {record.workflow_id}")
             self._records[record.workflow_id] = deepcopy(record)
+            self._snapshots.setdefault(record.workflow_id, {})[record.version] = deepcopy(record)
             return deepcopy(record)
 
     def get(self, workflow_id: str) -> SilverWorkflowRecord | None:
@@ -70,6 +81,14 @@ class InMemoryWorkflowRepository:
                 records = [record for record in records if record.status == status]
             records.sort(key=lambda record: record.updated_at, reverse=True)
             return [deepcopy(record) for record in records[:limit]]
+
+    def list_versions(self, workflow_id: str) -> list[SilverWorkflowRecord]:
+        with self._lock:
+            if workflow_id not in self._records:
+                raise WorkflowNotFoundError(f"Workflow no encontrado: {workflow_id}")
+            snapshots = list(self._snapshots.get(workflow_id, {}).values())
+            snapshots.sort(key=lambda record: record.version, reverse=True)
+            return [deepcopy(record) for record in snapshots]
 
     def confirm_source(self, workflow_id: str, *, expected_version: int, schema_context: SchemaContextEvidence, confirmed_by: str, updated_at: datetime) -> SilverWorkflowRecord:
         with self._lock:
@@ -188,4 +207,5 @@ class InMemoryWorkflowRepository:
 
     def _store(self, updated: SilverWorkflowRecord) -> SilverWorkflowRecord:
         self._records[updated.workflow_id] = deepcopy(updated)
+        self._snapshots.setdefault(updated.workflow_id, {})[updated.version] = deepcopy(updated)
         return deepcopy(updated)

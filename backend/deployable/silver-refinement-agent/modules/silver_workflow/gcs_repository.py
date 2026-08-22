@@ -68,6 +68,19 @@ class CloudStorageWorkflowRepository(WorkflowRepository):
         records.sort(key=lambda item: item.updated_at, reverse=True)
         return [record.model_copy(deep=True) for record in records[:limit]]
 
+    def list_versions(self, workflow_id: str) -> list[SilverWorkflowRecord]:
+        current = self.get(workflow_id)
+        if current is None:
+            raise WorkflowNotFoundError(f"Workflow no encontrado: {workflow_id}")
+        records: list[SilverWorkflowRecord] = []
+        prefix = self._join(f"workflows/{workflow_id}/versions/")
+        for blob in self._client.list_blobs(self._bucket, prefix=prefix):
+            if not blob.name.endswith(".json"):
+                continue
+            records.append(SilverWorkflowRecord.model_validate_json(blob.download_as_text()))
+        records.sort(key=lambda record: record.version, reverse=True)
+        return [record.model_copy(deep=True) for record in records]
+
     def confirm_source(self, workflow_id: str, *, expected_version: int, schema_context: SchemaContextEvidence, confirmed_by: str, updated_at: datetime) -> SilverWorkflowRecord:
         def mutate(record: SilverWorkflowRecord) -> SilverWorkflowRecord:
             metadata = dict(record.metadata)

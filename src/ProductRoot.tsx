@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { App } from './App';
-import { silverApi, type SilverWorkflowRecord } from './api';
+import { silverApi, type SilverWorkflowRecord, type SilverWorkflowVersionSummary } from './api';
 import { hydrateWorkflowForResume } from './workflowResume';
 import type { WorkflowState } from './types';
 import './processes.css';
@@ -57,6 +57,8 @@ export function ProductRoot() {
   const [mode, setMode] = useState<ProductMode>('processes');
   const [workflows, setWorkflows] = useState<SilverWorkflowRecord[]>([]);
   const [selected, setSelected] = useState<SilverWorkflowRecord | null>(null);
+  const [versionHistory, setVersionHistory] = useState<SilverWorkflowVersionSummary[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [resumeWorkflow, setResumeWorkflow] = useState<WorkflowState>();
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [query, setQuery] = useState('');
@@ -139,6 +141,19 @@ export function ProductRoot() {
     setMode('wizard');
   }
 
+  async function loadVersionHistory(workflowId: string) {
+    setHistoryLoading(true);
+    setError(undefined);
+    try {
+      const response = await silverApi.listWorkflowVersions(workflowId);
+      setVersionHistory(response.versions ?? []);
+    } catch (historyError) {
+      setError(historyError instanceof Error ? historyError.message : String(historyError));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
   if (mode === 'wizard') {
     return (
       <div className="productRootWizard">
@@ -219,7 +234,7 @@ export function ProductRoot() {
                   <td>{workflow.mapping_version ? `v${workflow.mapping_version}` : 'Pendiente'}</td>
                   <td>{packageVersion(workflow)}</td>
                   <td>{formatDate(workflow.updated_at)}</td>
-                  <td><button onClick={() => setSelected(workflow)}>Ver detalle</button></td>
+                  <td><button onClick={() => { setSelected(workflow); setVersionHistory([]); }}>Ver detalle</button></td>
                 </tr>
               ))}
               {!loading && filtered.length === 0 && (
@@ -250,13 +265,39 @@ export function ProductRoot() {
               <div className="processDetailNotice">
                 El proceso se reabrirá usando la versión más reciente persistida en backend.
               </div>
-              <button
-                className="primaryProcessAction"
-                disabled={loading}
-                onClick={() => void openProcess(selected.workflow_id)}
-              >
-                {loading ? 'Abriendo…' : 'Abrir proceso'}
-              </button>
+              <div className="processHistoryActions">
+                <button
+                  disabled={historyLoading}
+                  onClick={() => void loadVersionHistory(selected.workflow_id)}
+                >
+                  {historyLoading ? 'Cargando historial…' : 'Ver historial de versiones'}
+                </button>
+                <button
+                  className="primaryProcessAction"
+                  disabled={loading}
+                  onClick={() => void openProcess(selected.workflow_id)}
+                >
+                  {loading ? 'Abriendo…' : 'Abrir proceso'}
+                </button>
+              </div>
+              {versionHistory.length > 0 && (
+                <section className="processVersionHistory">
+                  <h3>Historial inmutable</h3>
+                  {versionHistory.map((version) => (
+                    <article key={version.workflow_version}>
+                      <div>
+                        <strong>Workflow v{version.workflow_version}</strong>
+                        <span>{version.lifecycle_status}</span>
+                      </div>
+                      <small>Mapping: {version.mapping_version ? `v${version.mapping_version}` : 'N/A'}</small>
+                      <small>Spec: {version.spec_id ?? 'N/A'}</small>
+                      <small>Package: {version.package_version ? `v${version.package_version}` : 'N/A'}</small>
+                      <small>Execution: {version.execution_id ?? 'N/A'}</small>
+                      <small>{version.status} · {formatDate(version.updated_at)}</small>
+                    </article>
+                  ))}
+                </section>
+              )}
             </>
           ) : (
             <div className="processDetailEmpty">

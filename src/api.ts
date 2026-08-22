@@ -69,6 +69,9 @@ export const silverApi = {
   getWorkflow: (workflowId: string) =>
     request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}`),
 
+  listWorkflowVersions: (workflowId: string) =>
+    request<SilverWorkflowVersionListResponse>(`/silver-workflows/${workflowId}/versions`),
+
   confirmSource: (workflowId: string, payload: unknown) =>
     request<SilverWorkflowRecord>(`/silver-workflows/${workflowId}/confirm-source`, {
       method: 'POST',
@@ -288,6 +291,25 @@ export interface SilverWorkflowRecord {
 export interface SilverWorkflowListResponse {
   total: number;
   workflows: SilverWorkflowRecord[];
+}
+
+export interface SilverWorkflowVersionSummary {
+  workflow_id: string;
+  workflow_version: number;
+  mapping_version?: number | null;
+  spec_id?: string | null;
+  package_version?: number | null;
+  execution_id?: string | null;
+  status: WorkflowState['status'];
+  updated_at: string;
+  lifecycle_status: 'CURRENT' | 'SUPERSEDED' | string;
+}
+
+export interface SilverWorkflowVersionListResponse {
+  workflow_id: string;
+  current_version: number;
+  total: number;
+  versions: SilverWorkflowVersionSummary[];
 }
 
 export interface MappingRecommendationResponse {

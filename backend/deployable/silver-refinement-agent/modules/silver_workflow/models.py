@@ -321,6 +321,25 @@ class SilverWorkflowListResponse(BaseModel):
     workflows: list[SilverWorkflowRecord]
 
 
+class SilverWorkflowVersionSummary(BaseModel):
+    workflow_id: str
+    workflow_version: int = Field(ge=1)
+    mapping_version: int | None = Field(default=None, ge=1)
+    spec_id: str | None = None
+    package_version: int | None = Field(default=None, ge=1)
+    execution_id: str | None = None
+    status: WorkflowStatus
+    updated_at: datetime
+    lifecycle_status: str
+
+
+class SilverWorkflowVersionListResponse(BaseModel):
+    workflow_id: str
+    current_version: int = Field(ge=1)
+    total: int = Field(ge=0)
+    versions: list[SilverWorkflowVersionSummary]
+
+
 class WorkflowRepositoryHealth(BaseModel):
     status: str
     provider: str

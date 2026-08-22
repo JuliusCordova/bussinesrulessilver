@@ -20,6 +20,8 @@ from .models import (
     SaveSilverSpecificationRequest,
     SilverWorkflowListResponse,
     SilverWorkflowRecord,
+    SilverWorkflowVersionListResponse,
+    SilverWorkflowVersionSummary,
     WorkflowAction,
     WorkflowRepositoryHealth,
     WorkflowStatus,
@@ -57,6 +59,32 @@ class SilverWorkflowService:
 
     def get_business_rules(self, workflow_id: str) -> BusinessRulesSection:
         return self.get(workflow_id).business_rules
+
+    def list_versions(self, workflow_id: str) -> SilverWorkflowVersionListResponse:
+        current = self.get(workflow_id)
+        snapshots = self.repository.list_versions(workflow_id)
+        versions: list[SilverWorkflowVersionSummary] = []
+        for record in snapshots:
+            artifact_package = record.artifact_package or {}
+            execution = record.execution or {}
+            raw_package_version = artifact_package.get("package_version") or execution.get("package_version")
+            versions.append(SilverWorkflowVersionSummary(
+                workflow_id=record.workflow_id,
+                workflow_version=record.version,
+                mapping_version=record.mapping_version,
+                spec_id=record.spec_id,
+                package_version=raw_package_version if isinstance(raw_package_version, int) else None,
+                execution_id=record.execution_id,
+                status=record.status,
+                updated_at=record.updated_at,
+                lifecycle_status="CURRENT" if record.version == current.version else "SUPERSEDED",
+            ))
+        return SilverWorkflowVersionListResponse(
+            workflow_id=workflow_id,
+            current_version=current.version,
+            total=len(versions),
+            versions=versions,
+        )
 
     def list(self, *, limit: int, status: WorkflowStatus | None) -> SilverWorkflowListResponse:
         records = [self._with_actions(record) for record in self.repository.list(limit=limit, status=status)]

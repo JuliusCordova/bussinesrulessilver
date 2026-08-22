@@ -10,6 +10,7 @@ from .tools import (
     profile_selected_table,
     recommend_column_mappings,
     validate_derived_nl_mapping_proposal,
+    validate_quality_nl_rule_proposal,
     quality_rule_evidence,
     validate_business_rules,
 )
@@ -92,14 +93,16 @@ def build_quality_rule_advisor_agent() -> LlmAgent:
         description="Recomienda reglas de calidad basadas en perfilamiento.",
         instruction=(
             "Solicitud: {request_json}. Perfil previo: {table_profile?}. "
-            "Si el perfil no está disponible, obtenlo con profile_selected_table. "
-            "Luego llama quality_rule_evidence usando el perfil JSON y "
-            "{business_keys_json}. Los campos críticos con nulos deben producir "
-            "NOT_NULL en estado FAILING; las claves deben evaluar NOT_NULL y UNIQUE. "
-            "Propón solo reglas con evidencia, déjalas PENDING_APPROVAL y devuelve "
-            "exclusivamente JSON válido."
+            "Si context comienza con QUALITY_NL:, interpreta exactamente una regla de calidad "
+            "usando solo columnas reales y uno de NOT_NULL, UNIQUE, ALLOWED_VALUES, VALUE_RANGE o REGEX. "
+            "No generes SQL, Python, PySpark ni expresiones libres. Construye solo un contrato estructurado "
+            "y llama siempre validate_quality_nl_rule_proposal con columns_json, la regla natural exacta "
+            "y proposal_json. Devuelve exclusivamente el JSON retornado por esa tool. "
+            "Para solicitudes normales, si falta perfil obtenlo con profile_selected_table y luego llama "
+            "quality_rule_evidence usando el perfil JSON y {business_keys_json}. Toda propuesta queda "
+            "PENDING_APPROVAL y requiere confirmación humana."
         ),
-        tools=[profile_selected_table, quality_rule_evidence],
+        tools=[profile_selected_table, quality_rule_evidence, validate_quality_nl_rule_proposal],
         output_key="quality_rule_proposals",
         **_telemetry("quality-rule-advisor", model),
     )

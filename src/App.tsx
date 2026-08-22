@@ -477,6 +477,8 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
   const [mappingImpactFingerprint, setMappingImpactFingerprint] = useState<string>();
   const [derivedNlProposal, setDerivedNlProposal] = useState<MappingRule>();
   const [derivedNlInterpretation, setDerivedNlInterpretation] = useState<string>();
+  const [qualityNlProposal, setQualityNlProposal] = useState<GovernedQualityRule>();
+  const [qualityNlInterpretation, setQualityNlInterpretation] = useState<string>();
 
   const activeIndex = stepOrder.indexOf(workflow.activeStep);
   const activeStep = steps[activeIndex];
@@ -946,6 +948,46 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
                     : existing.filter((item) => item.rule_id !== rule.rule_id),
                 };
               });
+            }}
+            qualityNlProposal={qualityNlProposal}
+            qualityNlInterpretation={qualityNlInterpretation}
+            onGenerateQualityNl={async (intent) => {
+              const naturalRule = intent.trim();
+              if (!naturalRule) {
+                applyError(new Error('Escribe una regla de calidad en lenguaje natural antes de interpretarla.'));
+                return;
+              }
+              await runAction('Interpretando regla de calidad con Gemini ADK...', async () => {
+                const response = await silverApi.runSilverAgent('quality-rule-advisor', {
+                  ...buildAgentRequest(workflow),
+                  context: `QUALITY_NL: ${naturalRule}`,
+                });
+                const output = response.evidence ?? parseAgentJson(response.output);
+                const proposal = output.proposal;
+                if (!proposal || typeof proposal !== 'object' || Array.isArray(proposal)) {
+                  throw new Error('El quality-rule-advisor no devolvió una propuesta gobernada.');
+                }
+                setQualityNlProposal(proposal as GovernedQualityRule);
+                setQualityNlInterpretation(String(output.interpretation ?? 'Entendí tu regla y la validé contra el schema.'));
+                setWorkflow((current) => ({
+                  ...current,
+                  agentSessionId: response.session_id,
+                  backendMessage: JSON.stringify(response),
+                }));
+              });
+            }}
+            onConfirmQualityNl={() => {
+              if (!qualityNlProposal) return;
+              setWorkflow((current) => ({
+                ...current,
+                approvedQualityRules: [
+                  ...(current.approvedQualityRules ?? []).filter((item) => item.rule_id !== qualityNlProposal.rule_id),
+                  qualityNlProposal,
+                ],
+                ...demoWorkflowPatch('Regla QUALITY_NL confirmada por usuario y agregada al Designer'),
+              }));
+              setQualityNlProposal(undefined);
+              setQualityNlInterpretation(undefined);
             }}
             onAddManualRule={(rule) => {
               setWorkflow((current) => ({
@@ -2022,6 +2064,10 @@ function RulesStep({
   workflow,
   onRecommend,
   onApproveProposal,
+  qualityNlProposal,
+  qualityNlInterpretation,
+  onGenerateQualityNl,
+  onConfirmQualityNl,
   onAddManualRule,
   onRemoveRule,
   onNext,
@@ -2029,6 +2075,10 @@ function RulesStep({
   workflow: WorkflowState;
   onRecommend: () => void;
   onApproveProposal: (proposal: Record<string, unknown>, approved: boolean) => void;
+  qualityNlProposal?: GovernedQualityRule;
+  qualityNlInterpretation?: string;
+  onGenerateQualityNl: (intent: string) => void;
+  onConfirmQualityNl: () => void;
   onAddManualRule: (rule: GovernedQualityRule) => void;
   onRemoveRule: (ruleId: string) => void;
   onNext: () => void;
@@ -2043,6 +2093,7 @@ function RulesStep({
   const [manualAction, setManualAction] = useState<QualityRuntimeAction>('WARN');
   const [warningThreshold, setWarningThreshold] = useState(0);
   const [criticalThreshold, setCriticalThreshold] = useState(1);
+  const [qualityNlIntent, setQualityNlIntent] = useState('');
 
   function addManual() {
     if (!manualColumn) return;
@@ -2088,6 +2139,33 @@ function RulesStep({
           AI y reglas manuales usan el mismo contrato, permanecen PENDING_APPROVAL y solo se
           vuelven ejecutables después del Quality Review.
         </span>
+      </div>
+
+      <div className="validationBox">
+        <strong>Regla en lenguaje natural</strong>
+        <label className="field">
+          <span>Describe la regla que quieres controlar</span>
+          <textarea
+            rows={3}
+            value={qualityNlIntent}
+            placeholder="Ejemplo: monto_total debe estar entre 0 y 100000"
+            onChange={(event) => setQualityNlIntent(event.target.value)}
+          />
+        </label>
+        <div className="actions">
+          <button onClick={() => onGenerateQualityNl(qualityNlIntent)}>Interpretar regla con AI</button>
+        </div>
+        {qualityNlProposal && (
+          <article className="checkOk">
+            <strong>{qualityNlInterpretation ?? 'Entendí tu regla así:'}</strong>
+            <span>{qualityNlProposal.dimension} · {qualityNlProposal.rule_type} · {qualityNlProposal.columns.join(', ')}</span>
+            <small>Gate {qualityNlProposal.runtime_action} · Origen DERIVED_NL · Estado PENDING_APPROVAL</small>
+            <div className="actions">
+              <button className="primary" onClick={() => { onConfirmQualityNl(); setQualityNlIntent(''); }}>Confirmar regla interpretada</button>
+            </div>
+          </article>
+        )}
+        <small>El texto natural es evidencia de intención; solo el contrato estructurado validado puede aprobarse.</small>
       </div>
 
       <div className="formGrid three">

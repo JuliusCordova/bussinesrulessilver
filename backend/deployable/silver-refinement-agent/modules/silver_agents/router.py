@@ -25,6 +25,7 @@ from .tools import (
     quality_rule_evidence,
     recommend_column_mappings,
     validate_derived_nl_mapping_proposal,
+    validate_quality_nl_rule_proposal,
 )
 
 
@@ -54,6 +55,7 @@ _TOOLS = {
     "quality-rule-advisor": [
         "profile_selected_table",
         "quality_rule_evidence",
+        "validate_quality_nl_rule_proposal",
     ],
     "business-rule-validator": [
         "profile_selected_table",
@@ -174,10 +176,26 @@ async def run_silver_agent(
                         json.dumps(profile, ensure_ascii=False),
                     )
             else:
-                result.evidence = quality_rule_evidence(
-                    json.dumps(profile, ensure_ascii=False),
-                    json.dumps(request.business_keys, ensure_ascii=False),
-                )
+                context = (request.context or "").strip()
+                if context.startswith("QUALITY_NL:"):
+                    natural_rule = context.split(":", 1)[1].strip()
+                    cleaned = result.output.strip()
+                    if cleaned.startswith("```"):
+                        cleaned = cleaned.replace("```json", "", 1).replace("```", "", 1).strip()
+                    parsed = json.loads(cleaned)
+                    if not isinstance(parsed, dict):
+                        raise ValueError("El quality-rule-advisor no devolvió un objeto JSON QUALITY_NL")
+                    candidate = parsed.get("proposal") if isinstance(parsed.get("proposal"), dict) else parsed
+                    result.evidence = validate_quality_nl_rule_proposal(
+                        json.dumps(request.columns, ensure_ascii=False),
+                        natural_rule,
+                        json.dumps(candidate, ensure_ascii=False),
+                    )
+                else:
+                    result.evidence = quality_rule_evidence(
+                        json.dumps(profile, ensure_ascii=False),
+                        json.dumps(request.business_keys, ensure_ascii=False),
+                    )
         finished_at = datetime.now(timezone.utc)
         governance.save_run(
             run_id=run_id,

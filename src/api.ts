@@ -1,4 +1,4 @@
-import type { CatalogField, GeneratedArtifact, WorkflowState } from './types';
+import type { CatalogField, GeneratedArtifact, GovernedQualityRule, WorkflowState } from './types';
 
 const DEFAULT_BASE_URL = 'https://silver-refinement-agent-mkqutd4koq-uc.a.run.app';
 
@@ -228,7 +228,7 @@ export interface SilverAgentRunRequest {
   business_keys: string[];
   watermark_column?: string | null;
   business_rules?: Array<Record<string, unknown>>;
-  approved_quality_rules?: Array<Record<string, unknown>>;
+  approved_quality_rules?: GovernedQualityRule[];
   context?: string | null;
   requested_by?: string | null;
 }

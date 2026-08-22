@@ -55,7 +55,8 @@ export interface WorkflowState {
   mappingSource?: 'DIRECT' | 'DETERMINISTIC' | 'AGENT' | 'USER' | 'DERIVED_NL';
   agentProfile?: Record<string, unknown>;
   qualityRuleProposals?: Array<Record<string, unknown>>;
-  approvedQualityRules?: Array<Record<string, unknown>>;
+  approvedQualityRules?: GovernedQualityRule[];
+  qualityRulesVersion?: number;
   qualityReviewed?: boolean;
   qualityReviewDecision?: string;
   generatedArtifacts?: GeneratedArtifact[];
@@ -110,6 +111,35 @@ export interface MappingRule {
   reason?: string;
   risk?: string;
   requiresApproval?: boolean;
+}
+
+export type QualityDimension =
+  | 'COMPLETENESS' | 'UNIQUENESS' | 'VALIDITY' | 'CONSISTENCY'
+  | 'REFERENTIAL' | 'TIMELINESS' | 'AGGREGATE' | 'BUSINESS';
+
+export type QualityRuntimeAction = 'OBSERVE_ONLY' | 'WARN' | 'QUARANTINE' | 'BLOCK_LOAD';
+
+export interface GovernedQualityRule {
+  rule_id: string;
+  name: string;
+  version: number;
+  dimension: QualityDimension;
+  rule_type: string;
+  columns: string[];
+  parameters: Record<string, unknown>;
+  expression?: string | null;
+  warning_threshold: number;
+  critical_threshold: number;
+  severity: string;
+  runtime_action: QualityRuntimeAction;
+  evidence?: string | null;
+  confidence?: number | null;
+  source: 'AI_RECOMMENDED' | 'MANUAL' | 'DERIVED_NL';
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'BLOCKED' | 'NEEDS_CLARIFICATION';
+  active: boolean;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  metadata?: Record<string, unknown>;
 }
 
 export interface BusinessRule {

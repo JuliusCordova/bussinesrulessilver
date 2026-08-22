@@ -14,7 +14,10 @@ import {
 } from './api';
 import { businessRules, seedColumns, seedSource } from './seed';
 import { toBackendTransformation } from './transformations';
-import type { CatalogField, GeneratedArtifact, MappingRule, StepId, WorkflowState } from './types';
+import type {
+  CatalogField, GeneratedArtifact, GovernedQualityRule, MappingRule,
+  QualityDimension, QualityRuntimeAction, StepId, WorkflowState,
+} from './types';
 
 const steps: Array<{ id: StepId; label: string; description: string }> = [
   { id: 'source', label: 'Origen y destino', description: 'Fuente Bronze y tabla Silver' },
@@ -432,21 +435,33 @@ function saveBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function proposalToBackendRule(proposal: Record<string, unknown>) {
+function proposalToBackendRule(proposal: Record<string, unknown>): GovernedQualityRule {
   const columnName = String(proposal.column_name ?? '');
-  const ruleType = String(proposal.rule_type ?? '');
+  const ruleType = String(proposal.rule_type ?? 'CUSTOM').toUpperCase();
+  const dimension: QualityDimension = ruleType === 'UNIQUE'
+    ? 'UNIQUENESS'
+    : ruleType === 'NOT_NULL' ? 'COMPLETENESS' : 'VALIDITY';
+  const ruleName = `${columnName || 'table'}_${ruleType.toLowerCase()}`;
   return {
-    rule_name: `${columnName}_${ruleType.toLowerCase()}`,
-    rule_dimension: ruleType === 'UNIQUE' ? 'UNIQUENESS' : 'VALIDITY',
+    rule_id: `qr_${ruleName}`,
+    name: ruleName,
+    version: 1,
+    dimension,
     rule_type: ruleType,
-    column_name: columnName,
-    rule_parameters: (proposal.rule_parameters as Record<string, unknown> | undefined) ?? {},
+    columns: columnName ? [columnName] : [],
+    parameters: (proposal.rule_parameters as Record<string, unknown> | undefined) ?? {},
     warning_threshold: 0,
     critical_threshold: 1,
-    severity_level: String(proposal.severity_level ?? 'MEDIUM'),
-    active_flag: true,
-    agent_evidence: proposal.evidence ?? null,
-    agent_confidence: proposal.confidence ?? null,
+    severity: String(proposal.severity_level ?? 'MEDIUM'),
+    runtime_action: ruleType === 'NOT_NULL' || ruleType === 'UNIQUE' ? 'BLOCK_LOAD' : 'WARN',
+    evidence: proposal.evidence == null ? null : String(proposal.evidence),
+    confidence: typeof proposal.confidence === 'number' ? proposal.confidence : null,
+    source: 'AI_RECOMMENDED',
+    status: 'PENDING_APPROVAL',
+    active: true,
+    approved_by: null,
+    approved_at: null,
+    metadata: { current_status: proposal.current_status ?? null },
   };
 }
 
@@ -924,14 +939,29 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
               const rule = proposalToBackendRule(proposal);
               setWorkflow((current) => {
                 const existing = current.approvedQualityRules ?? [];
-                const ruleName = String(rule.rule_name);
                 return {
                   ...current,
                   approvedQualityRules: approved
-                    ? [...existing.filter((item) => item.rule_name !== ruleName), rule]
-                    : existing.filter((item) => item.rule_name !== ruleName),
+                    ? [...existing.filter((item) => item.rule_id !== rule.rule_id), rule]
+                    : existing.filter((item) => item.rule_id !== rule.rule_id),
                 };
               });
+            }}
+            onAddManualRule={(rule) => {
+              setWorkflow((current) => ({
+                ...current,
+                approvedQualityRules: [
+                  ...(current.approvedQualityRules ?? []).filter((item) => item.rule_id !== rule.rule_id),
+                  rule,
+                ],
+                ...demoWorkflowPatch('Regla manual agregada al Quality Rule Designer'),
+              }));
+            }}
+            onRemoveRule={(ruleId) => {
+              setWorkflow((current) => ({
+                ...current,
+                approvedQualityRules: (current.approvedQualityRules ?? []).filter((item) => item.rule_id !== ruleId),
+              }));
             }}
             onNext={async () => {
               await runAction('Generando y confirmando reglas de negocio...', async () => {
@@ -1992,17 +2022,53 @@ function RulesStep({
   workflow,
   onRecommend,
   onApproveProposal,
+  onAddManualRule,
+  onRemoveRule,
   onNext,
 }: {
   workflow: WorkflowState;
   onRecommend: () => void;
   onApproveProposal: (proposal: Record<string, unknown>, approved: boolean) => void;
+  onAddManualRule: (rule: GovernedQualityRule) => void;
+  onRemoveRule: (ruleId: string) => void;
   onNext: () => void;
 }) {
   const proposals = workflow.qualityRuleProposals ?? [];
-  const approvedNames = new Set(
-    (workflow.approvedQualityRules ?? []).map((rule) => String(rule.rule_name)),
-  );
+  const approvedIds = new Set((workflow.approvedQualityRules ?? []).map((rule) => rule.rule_id));
+  const columns = workflow.sourceColumns ?? [];
+  const [manualType, setManualType] = useState('NOT_NULL');
+  const [manualDimension, setManualDimension] = useState<QualityDimension>('COMPLETENESS');
+  const [manualColumn, setManualColumn] = useState(columns[0]?.name ?? '');
+  const [manualSeverity, setManualSeverity] = useState('MEDIUM');
+  const [manualAction, setManualAction] = useState<QualityRuntimeAction>('WARN');
+  const [warningThreshold, setWarningThreshold] = useState(0);
+  const [criticalThreshold, setCriticalThreshold] = useState(1);
+
+  function addManual() {
+    if (!manualColumn) return;
+    if (criticalThreshold < warningThreshold) return;
+    const ruleName = `${manualColumn}_${manualType.toLowerCase()}`;
+    onAddManualRule({
+      rule_id: `qr_manual_${ruleName}`,
+      name: ruleName,
+      version: 1,
+      dimension: manualDimension,
+      rule_type: manualType,
+      columns: [manualColumn],
+      parameters: {},
+      warning_threshold: warningThreshold,
+      critical_threshold: criticalThreshold,
+      severity: manualSeverity,
+      runtime_action: manualAction,
+      evidence: 'Regla creada manualmente en Quality Rule Designer.',
+      confidence: null,
+      source: 'MANUAL',
+      status: 'PENDING_APPROVAL',
+      active: true,
+      approved_by: null,
+      approved_at: null,
+    });
+  }
 
   return (
     <section className="card">
@@ -2017,19 +2083,40 @@ function RulesStep({
       </div>
 
       <div className="sprintNote">
-        <strong>Fallback deterministico</strong>
+        <strong>Quality Rule Designer gobernado</strong>
         <span>
-          {toBackendQualityRules(workflow).length} reglas base disponibles si el agente no responde.
-          El sistema nunca aprueba automáticamente una recomendación.
+          AI y reglas manuales usan el mismo contrato, permanecen PENDING_APPROVAL y solo se
+          vuelven ejecutables después del Quality Review.
         </span>
       </div>
+
+      <div className="formGrid three">
+        <ContractSelectField label="Tipo de regla" value={manualType}
+          options={['NOT_NULL', 'UNIQUE', 'ALLOWED_VALUES', 'VALUE_RANGE', 'REGEX']} onChange={setManualType} />
+        <ContractSelectField label="Dimensión" value={manualDimension}
+          options={['COMPLETENESS', 'UNIQUENESS', 'VALIDITY', 'CONSISTENCY', 'REFERENTIAL', 'TIMELINESS', 'AGGREGATE', 'BUSINESS']}
+          onChange={(value) => setManualDimension(value as QualityDimension)} />
+        <ContractSelectField label="Columna" value={manualColumn}
+          options={columns.map((column) => column.name)} onChange={setManualColumn} />
+        <ContractSelectField label="Severidad" value={manualSeverity}
+          options={['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']} onChange={setManualSeverity} />
+        <ContractSelectField label="Runtime action" value={manualAction}
+          options={['OBSERVE_ONLY', 'WARN', 'QUARANTINE', 'BLOCK_LOAD']}
+          onChange={(value) => setManualAction(value as QualityRuntimeAction)} />
+        <label className="field"><span>Warning threshold</span><input type="number" min="0" value={warningThreshold}
+          onChange={(event) => setWarningThreshold(Number(event.target.value))} /></label>
+        <label className="field"><span>Critical threshold</span><input type="number" min="0" value={criticalThreshold}
+          onChange={(event) => setCriticalThreshold(Number(event.target.value))} /></label>
+      </div>
+      <div className="actions"><button onClick={addManual}>Agregar regla manual</button></div>
+      {criticalThreshold < warningThreshold && <small className="riskText">Critical threshold debe ser mayor o igual que warning.</small>}
 
       {proposals.length ? (
         <div className="agentRuleList">
           {proposals.map((proposal, index) => {
             const backendRule = proposalToBackendRule(proposal);
-            const ruleName = String(backendRule.rule_name);
-            const approved = approvedNames.has(ruleName);
+            const ruleName = backendRule.name;
+            const approved = approvedIds.has(backendRule.rule_id);
             return (
               <article key={`${ruleName}-${index}`} className={approved ? 'approved' : ''}>
                 <label>
@@ -2059,11 +2146,23 @@ function RulesStep({
         </div>
       )}
 
+      {!!workflow.approvedQualityRules?.length && (
+        <div className="validationBox">
+          <strong>Reglas seleccionadas para aprobación</strong>
+          {workflow.approvedQualityRules.map((rule) => (
+            <article key={rule.rule_id} className="checkOk">
+              <strong>{rule.dimension} · {rule.name}</strong>
+              <span>{rule.rule_type} sobre {rule.columns.join(', ') || 'nivel tabla'} · {rule.severity}</span>
+              <small>Gate: {rule.runtime_action} · Warning {rule.warning_threshold} · Critical {rule.critical_threshold} · Origen {rule.source}</small>
+              <button className="dangerText" onClick={() => onRemoveRule(rule.rule_id)}>Quitar</button>
+            </article>
+          ))}
+        </div>
+      )}
       <p className="catalogStatus">
-        Aprobadas: {workflow.approvedQualityRules?.length ?? 0} · Workflow version backend:{' '}
-        {currentVersion(workflow)}
+        Seleccionadas: {workflow.approvedQualityRules?.length ?? 0} · Quality Rules v{workflow.qualityRulesVersion ?? 'pendiente'} · Workflow v{currentVersion(workflow)}
       </p>
-      <button className="primary" onClick={onNext}>Confirmar reglas aprobadas</button>
+      <button className="primary" onClick={onNext}>Confirmar reglas seleccionadas</button>
     </section>
   );
 }

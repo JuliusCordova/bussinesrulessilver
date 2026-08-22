@@ -1,5 +1,5 @@
 import type { SilverWorkflowRecord } from './api';
-import type { CatalogField, MappingRule, StepId, WorkflowState } from './types';
+import type { CatalogField, GovernedQualityRule, MappingRule, QualityDimension, QualityRuntimeAction, StepId, WorkflowState } from './types';
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -73,6 +73,61 @@ function mappingRules(workflow: SilverWorkflowRecord): MappingRule[] {
             ? row.recommendation_risk
             : undefined,
       requiresApproval: Boolean(row.requires_approval),
+    });
+  }
+
+  return rules;
+}
+
+function governedQualityRules(workflow: SilverWorkflowRecord): GovernedQualityRule[] {
+  const rules: GovernedQualityRule[] = [];
+
+  for (const raw of workflow.quality_rules ?? []) {
+    const row = asRecord(raw);
+    if (!row) continue;
+
+    const legacyName = String(row.rule_name ?? row.name ?? row.rule_type ?? 'quality_rule');
+    const ruleType = String(row.rule_type ?? 'CUSTOM').toUpperCase();
+    const ruleId = String(row.rule_id ?? `qr_${legacyName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'quality_rule'}`);
+    const columns = Array.isArray(row.columns)
+      ? row.columns.map(String).filter(Boolean)
+      : [row.column_name, row.comparison_column].filter(Boolean).map(String);
+    const dimension = String(row.dimension ?? row.rule_dimension ?? 'VALIDITY') as QualityDimension;
+    const runtimeAction = String(row.runtime_action ?? 'WARN') as QualityRuntimeAction;
+
+    rules.push({
+      rule_id: ruleId,
+      name: legacyName,
+      version: typeof row.version === 'number' ? row.version : 1,
+      dimension,
+      rule_type: ruleType,
+      columns: Array.from(new Set(columns)),
+      parameters: asRecord(row.parameters) ?? asRecord(row.rule_parameters) ?? {},
+      expression: typeof row.expression === 'string' ? row.expression : null,
+      warning_threshold: typeof row.warning_threshold === 'number' ? row.warning_threshold : 0,
+      critical_threshold: typeof row.critical_threshold === 'number' ? row.critical_threshold : 1,
+      severity: String(row.severity ?? row.severity_level ?? 'MEDIUM'),
+      runtime_action: runtimeAction,
+      evidence:
+        typeof row.evidence === 'string'
+          ? row.evidence
+          : typeof row.agent_evidence === 'string' ? row.agent_evidence : null,
+      confidence:
+        typeof row.confidence === 'number'
+          ? row.confidence
+          : typeof row.agent_confidence === 'number' ? row.agent_confidence : null,
+      source: row.source === 'DERIVED_NL' || row.source === 'AI_RECOMMENDED' || row.source === 'MANUAL'
+        ? row.source
+        : row.agent_evidence != null ? 'AI_RECOMMENDED' : 'MANUAL',
+      status:
+        row.status === 'DRAFT' || row.status === 'PENDING_APPROVAL' || row.status === 'APPROVED' ||
+        row.status === 'REJECTED' || row.status === 'BLOCKED' || row.status === 'NEEDS_CLARIFICATION'
+          ? row.status
+          : workflow.quality_review ? 'APPROVED' : 'PENDING_APPROVAL',
+      active: row.active !== false && row.active_flag !== false,
+      approved_by: typeof row.approved_by === 'string' ? row.approved_by : null,
+      approved_at: typeof row.approved_at === 'string' ? row.approved_at : null,
+      metadata: asRecord(row.metadata) ?? {},
     });
   }
 
@@ -168,7 +223,8 @@ export function hydrateWorkflowForResume(workflow: SilverWorkflowRecord): Workfl
     ],
     mappingRules: mappingRules(workflow),
     mappingSource: (workflow.mapping_rules?.length ?? 0) > 0 ? 'USER' : undefined,
-    approvedQualityRules: workflow.quality_rules ?? [],
+    approvedQualityRules: governedQualityRules(workflow),
+    qualityRulesVersion: workflow.quality_rules_version ?? undefined,
     qualityReviewed: Boolean(workflow.quality_review),
     qualityReviewDecision:
       typeof qualityReview?.decision === 'string' ? qualityReview.decision : undefined,

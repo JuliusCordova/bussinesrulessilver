@@ -64,6 +64,125 @@ class QualityReviewDecision(str, Enum):
     APPROVED_WITH_OBSERVATIONS = "APPROVED_WITH_OBSERVATIONS"
 
 
+class QualityDimension(str, Enum):
+    COMPLETENESS = "COMPLETENESS"
+    UNIQUENESS = "UNIQUENESS"
+    VALIDITY = "VALIDITY"
+    CONSISTENCY = "CONSISTENCY"
+    REFERENTIAL = "REFERENTIAL"
+    TIMELINESS = "TIMELINESS"
+    AGGREGATE = "AGGREGATE"
+    BUSINESS = "BUSINESS"
+
+
+class QualityRuleStatus(str, Enum):
+    DRAFT = "DRAFT"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    BLOCKED = "BLOCKED"
+    NEEDS_CLARIFICATION = "NEEDS_CLARIFICATION"
+
+
+class QualityRuleSource(str, Enum):
+    AI_RECOMMENDED = "AI_RECOMMENDED"
+    MANUAL = "MANUAL"
+    DERIVED_NL = "DERIVED_NL"
+
+
+class QualityRuntimeAction(str, Enum):
+    OBSERVE_ONLY = "OBSERVE_ONLY"
+    WARN = "WARN"
+    QUARANTINE = "QUARANTINE"
+    BLOCK_LOAD = "BLOCK_LOAD"
+
+
+class GovernedQualityRule(BaseModel):
+    rule_id: str = Field(min_length=1, max_length=300)
+    name: str = Field(min_length=1, max_length=300)
+    version: int = Field(default=1, ge=1)
+    dimension: QualityDimension
+    rule_type: str = Field(min_length=1, max_length=200)
+    columns: list[str] = Field(default_factory=list)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    expression: str | None = Field(default=None, max_length=8000)
+    warning_threshold: float = Field(default=0.0, ge=0)
+    critical_threshold: float = Field(default=1.0, ge=0)
+    severity: str = Field(default="MEDIUM", min_length=1, max_length=100)
+    runtime_action: QualityRuntimeAction = QualityRuntimeAction.WARN
+    evidence: str | None = Field(default=None, max_length=8000)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    source: QualityRuleSource = QualityRuleSource.MANUAL
+    status: QualityRuleStatus = QualityRuleStatus.PENDING_APPROVAL
+    active: bool = True
+    approved_by: str | None = Field(default=None, max_length=320)
+    approved_at: datetime | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def promote_legacy_rule(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        if "name" in value and "dimension" in value and "rule_type" in value:
+            return value
+        data = dict(value)
+        name = str(data.get("rule_name") or data.get("name") or data.get("rule_type") or "quality_rule")
+        rule_id = data.get("rule_id")
+        if not rule_id:
+            slug = "".join(ch if ch.isalnum() else "_" for ch in name.lower()).strip("_") or "quality_rule"
+            rule_id = f"qr_{slug}"
+        columns: list[str] = []
+        for candidate in (data.get("column_name"), data.get("comparison_column")):
+            if candidate and str(candidate) not in columns:
+                columns.append(str(candidate))
+        source = data.get("source")
+        if not source:
+            source = "AI_RECOMMENDED" if data.get("agent_evidence") is not None else "MANUAL"
+        return {
+            "rule_id": rule_id,
+            "name": name,
+            "version": data.get("version", 1),
+            "dimension": data.get("rule_dimension") or data.get("dimension") or "VALIDITY",
+            "rule_type": data.get("rule_type") or "CUSTOM",
+            "columns": data.get("columns") or columns,
+            "parameters": data.get("rule_parameters") or data.get("parameters") or {},
+            "expression": data.get("expression"),
+            "warning_threshold": data.get("warning_threshold", 0.0),
+            "critical_threshold": data.get("critical_threshold", 1.0),
+            "severity": data.get("severity_level") or data.get("severity") or "MEDIUM",
+            "runtime_action": data.get("runtime_action") or "WARN",
+            "evidence": data.get("evidence") or data.get("agent_evidence"),
+            "confidence": data.get("confidence") if data.get("confidence") is not None else data.get("agent_confidence"),
+            "source": source,
+            "status": data.get("status") or "PENDING_APPROVAL",
+            "active": data.get("active_flag", data.get("active", True)),
+            "approved_by": data.get("approved_by"),
+            "approved_at": data.get("approved_at"),
+            "metadata": data.get("metadata") or {},
+        }
+
+    @field_validator("columns")
+    @classmethod
+    def normalize_quality_columns(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for raw in values:
+            value = raw.strip()
+            if not value:
+                raise ValueError("Las columnas de una regla de calidad no pueden estar vacías")
+            if value not in normalized:
+                normalized.append(value)
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_thresholds_and_approval(self) -> "GovernedQualityRule":
+        if self.critical_threshold < self.warning_threshold:
+            raise ValueError("critical_threshold debe ser mayor o igual que warning_threshold")
+        if self.status == QualityRuleStatus.APPROVED and (not self.approved_by or self.approved_at is None):
+            raise ValueError("Una regla APPROVED requiere approved_by y approved_at")
+        return self
+
+
 class BronzeSourceReference(BaseModel):
     connection_id: str = Field(min_length=1, max_length=300)
     project_id: str | None = Field(default=None, max_length=300)
@@ -314,7 +433,14 @@ class ReviewQualityRequest(BaseModel):
     decision: QualityReviewDecision
     reviewed_by: str = Field(min_length=2, max_length=200)
     review_notes: str = Field(min_length=2, max_length=4000)
-    quality_rules: list[dict[str, Any]] = Field(default_factory=list)
+    quality_rules: list[GovernedQualityRule] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_unique_quality_rules(self) -> "ReviewQualityRequest":
+        rule_ids = [rule.rule_id for rule in self.quality_rules]
+        if len(rule_ids) != len(set(rule_ids)):
+            raise ValueError("Cada regla de calidad debe tener un rule_id único")
+        return self
 
 
 class SilverWorkflowRecord(BaseModel):
@@ -330,6 +456,7 @@ class SilverWorkflowRecord(BaseModel):
     mapping_version: int | None = Field(default=None, ge=1)
     silver_target: SilverTargetReference | None = None
     quality_rules: list[dict[str, Any]] = Field(default_factory=list)
+    quality_rules_version: int | None = Field(default=None, ge=1)
     quality_review: dict[str, Any] | None = None
     artifact_package: dict[str, Any] | None = None
     governance: dict[str, Any] | None = None
@@ -370,6 +497,7 @@ class SilverWorkflowVersionSummary(BaseModel):
     workflow_id: str
     workflow_version: int = Field(ge=1)
     mapping_version: int | None = Field(default=None, ge=1)
+    quality_rules_version: int | None = Field(default=None, ge=1)
     spec_id: str | None = None
     package_version: int | None = Field(default=None, ge=1)
     execution_id: str | None = None

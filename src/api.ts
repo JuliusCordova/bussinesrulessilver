@@ -279,6 +279,7 @@ export interface SilverWorkflowRecord {
   mapping_version?: number | null;
   silver_target?: SilverTargetReference | null;
   quality_rules?: Array<Record<string, unknown>>;
+  quality_rules_version?: number | null;
   quality_review?: Record<string, unknown> | null;
   artifact_package?: Record<string, unknown> | null;
   governance?: Record<string, unknown> | null;
@@ -303,6 +304,7 @@ export interface SilverWorkflowVersionSummary {
   workflow_id: string;
   workflow_version: number;
   mapping_version?: number | null;
+  quality_rules_version?: number | null;
   spec_id?: string | null;
   package_version?: number | null;
   execution_id?: string | null;

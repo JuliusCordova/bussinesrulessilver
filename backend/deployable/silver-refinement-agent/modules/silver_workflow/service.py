@@ -17,6 +17,7 @@ from .models import (
     MappingImpactRequest,
     MappingImpactResponse,
     ReviewQualityRequest,
+    QualityRuleStatus,
     SaveBusinessRulesDraftRequest,
     SaveSilverMappingRequest,
     SaveSilverSpecificationRequest,
@@ -74,6 +75,7 @@ class SilverWorkflowService:
                 workflow_id=record.workflow_id,
                 workflow_version=record.version,
                 mapping_version=record.mapping_version,
+                quality_rules_version=record.quality_rules_version,
                 spec_id=record.spec_id,
                 package_version=raw_package_version if isinstance(raw_package_version, int) else None,
                 execution_id=record.execution_id,
@@ -307,17 +309,29 @@ class SilverWorkflowService:
     def review_quality(self, workflow_id: str, request: ReviewQualityRequest) -> SilverWorkflowRecord:
         current = self._require_quality_step(workflow_id, expected_version=request.expected_version)
         reviewed_at = datetime.now(timezone.utc)
+        next_quality_rules_version = (current.quality_rules_version or 0) + 1
+        approved_rules = [
+            rule.model_copy(deep=True, update={
+                "status": QualityRuleStatus.APPROVED,
+                "approved_by": request.reviewed_by,
+                "approved_at": reviewed_at,
+            }).model_dump(mode="json")
+            for rule in request.quality_rules
+            if rule.active
+        ]
         review = {
             "decision": request.decision.value,
             "reviewed_by": request.reviewed_by,
             "review_notes": request.review_notes,
             "reviewed_at": reviewed_at.isoformat(),
             "source_workflow_version": current.version,
+            "quality_rules_version": next_quality_rules_version,
+            "approved_rule_count": len(approved_rules),
         }
         return self._with_actions(self.repository.review_quality(
             workflow_id, expected_version=request.expected_version,
-            quality_rules=request.quality_rules, quality_review=review,
-            updated_at=reviewed_at,
+            quality_rules=approved_rules, quality_rules_version=next_quality_rules_version,
+            quality_review=review, updated_at=reviewed_at,
         ))
 
     def _require_business_rules_step(self, workflow_id: str, *, expected_version: int) -> SilverWorkflowRecord:

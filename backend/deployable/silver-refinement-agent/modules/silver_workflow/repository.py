@@ -37,7 +37,7 @@ class WorkflowRepository(Protocol):
     def confirm_business_rules(self, workflow_id: str, *, expected_version: int, section: BusinessRulesSection, confirmed_by: str, confirmation_reason: str, updated_at: datetime) -> SilverWorkflowRecord: ...
     def save_mapping_version(self, workflow_id: str, *, expected_version: int, mapping_version: int, target: SilverTargetReference, mapping_rules: list[dict[str, object]], edited_by: str, change_reason: str, updated_at: datetime) -> SilverWorkflowRecord: ...
     def save_specification(self, workflow_id: str, *, expected_version: int, spec_id: str, mapping_version: int, target: SilverTargetReference, mapping_rules: list[dict[str, object]], created_by: str, change_reason: str, updated_at: datetime) -> SilverWorkflowRecord: ...
-    def review_quality(self, workflow_id: str, *, expected_version: int, quality_rules: list[dict[str, object]], quality_review: dict[str, object], updated_at: datetime) -> SilverWorkflowRecord: ...
+    def review_quality(self, workflow_id: str, *, expected_version: int, quality_rules: list[dict[str, object]], quality_rules_version: int, quality_review: dict[str, object], updated_at: datetime) -> SilverWorkflowRecord: ...
 
 
 class InMemoryWorkflowRepository:
@@ -168,7 +168,7 @@ class InMemoryWorkflowRepository:
                 "mapping_rules": mapping_rules, "updated_at": updated_at, "metadata": metadata,
             }))
 
-    def review_quality(self, workflow_id: str, *, expected_version: int, quality_rules: list[dict[str, object]], quality_review: dict[str, object], updated_at: datetime) -> SilverWorkflowRecord:
+    def review_quality(self, workflow_id: str, *, expected_version: int, quality_rules: list[dict[str, object]], quality_rules_version: int, quality_review: dict[str, object], updated_at: datetime) -> SilverWorkflowRecord:
         with self._lock:
             record = self._require_record(workflow_id)
             self._require_version(record, expected_version, "confirmar la revisión de calidad")
@@ -182,7 +182,8 @@ class InMemoryWorkflowRepository:
             })
             return self._store(record.model_copy(deep=True, update={
                 "version": record.version + 1, "active_step": 6,
-                "quality_rules": quality_rules, "quality_review": quality_review,
+                "quality_rules": quality_rules, "quality_rules_version": quality_rules_version,
+                "quality_review": quality_review,
                 "updated_at": updated_at, "metadata": metadata,
             }))
 

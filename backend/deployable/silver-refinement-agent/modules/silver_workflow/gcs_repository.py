@@ -156,13 +156,13 @@ class CloudStorageWorkflowRepository(WorkflowRepository):
             return record.model_copy(deep=True, update={"version": record.version + 1, "active_step": 5, "spec_id": spec_id, "mapping_version": mapping_version, "silver_target": target, "mapping_rules": mapping_rules, "updated_at": updated_at, "metadata": metadata})
         return self._update(workflow_id, expected_version, mutate)
 
-    def review_quality(self, workflow_id: str, *, expected_version: int, quality_rules: list[dict[str, object]], quality_review: dict[str, object], updated_at: datetime) -> SilverWorkflowRecord:
+    def review_quality(self, workflow_id: str, *, expected_version: int, quality_rules: list[dict[str, object]], quality_rules_version: int, quality_review: dict[str, object], updated_at: datetime) -> SilverWorkflowRecord:
         def mutate(record: SilverWorkflowRecord) -> SilverWorkflowRecord:
             if record.active_step != 5 or not record.spec_id:
                 raise WorkflowVersionConflictError("El workflow no está listo para revisión de calidad")
             metadata = dict(record.metadata)
             metadata.update({"quality_reviewed_by": quality_review["reviewed_by"], "quality_review_decision": quality_review["decision"], "quality_reviewed_at": updated_at.isoformat()})
-            return record.model_copy(deep=True, update={"version": record.version + 1, "active_step": 6, "quality_rules": quality_rules, "quality_review": quality_review, "updated_at": updated_at, "metadata": metadata})
+            return record.model_copy(deep=True, update={"version": record.version + 1, "active_step": 6, "quality_rules": quality_rules, "quality_rules_version": quality_rules_version, "quality_review": quality_review, "updated_at": updated_at, "metadata": metadata})
         return self._update(workflow_id, expected_version, mutate)
 
     def _update(self, workflow_id: str, expected_version: int, mutate: Callable[[SilverWorkflowRecord], SilverWorkflowRecord]) -> SilverWorkflowRecord:

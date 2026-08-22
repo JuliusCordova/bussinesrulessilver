@@ -132,5 +132,6 @@ export interface GeneratedArtifact {
   validation_status?: string;
   storage_uri?: string | null;
   content_hash?: string | null;
+  is_current?: boolean;
   metadata?: Record<string, unknown>;
 }

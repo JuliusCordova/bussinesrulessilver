@@ -59,6 +59,7 @@ export function ProductRoot() {
   const [selected, setSelected] = useState<SilverWorkflowRecord | null>(null);
   const [versionHistory, setVersionHistory] = useState<SilverWorkflowVersionSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [packageDownloadLoading, setPackageDownloadLoading] = useState(false);
   const [resumeWorkflow, setResumeWorkflow] = useState<WorkflowState>();
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [query, setQuery] = useState('');
@@ -139,6 +140,37 @@ export function ProductRoot() {
   function startNewProcess() {
     setResumeWorkflow(undefined);
     setMode('wizard');
+  }
+
+  async function downloadGovernedPackage(workflow: SilverWorkflowRecord) {
+    if (!workflow.spec_id) {
+      setError('El proceso todavía no tiene spec_id; no existe un package gobernado descargable.');
+      return;
+    }
+    setPackageDownloadLoading(true);
+    setError(undefined);
+    try {
+      const artifacts = await silverApi.listArtifacts(workflow.spec_id);
+      const packageArtifact = artifacts.find((artifact) =>
+        artifact.artifact_type === 'ARTIFACT_PACKAGE' && artifact.is_current !== false,
+      );
+      if (!packageArtifact) {
+        throw new Error('No existe un ARTIFACT_PACKAGE vigente para esta especificación.');
+      }
+      const blob = await silverApi.downloadArtifact(workflow.spec_id, 'ARTIFACT_PACKAGE');
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = packageArtifact.artifact_name || 'artifact-package.zip';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (downloadError) {
+      setError(downloadError instanceof Error ? downloadError.message : String(downloadError));
+    } finally {
+      setPackageDownloadLoading(false);
+    }
   }
 
   async function loadVersionHistory(workflowId: string) {
@@ -266,6 +298,12 @@ export function ProductRoot() {
                 El proceso se reabrirá usando la versión más reciente persistida en backend.
               </div>
               <div className="processHistoryActions">
+                <button
+                  disabled={!selected.spec_id || packageDownloadLoading}
+                  onClick={() => void downloadGovernedPackage(selected)}
+                >
+                  {packageDownloadLoading ? 'Descargando package…' : 'Descargar package ZIP'}
+                </button>
                 <button
                   disabled={historyLoading}
                   onClick={() => void loadVersionHistory(selected.workflow_id)}

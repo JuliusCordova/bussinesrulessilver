@@ -946,11 +946,15 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
                   spec_id: pkg.spec_id,
                   requested_by: REQUESTED_BY,
                 });
+                const packageArtifact = pkg.artifacts.find((artifact) =>
+                  artifact.artifact_type === 'ARTIFACT_PACKAGE',
+                );
                 setWorkflow((current) => ({
                   ...current,
                   ...demoWorkflowPatch('Artefactos descargables y execution creados'),
                   specId: pkg.spec_id,
                   mappingVersion: pkg.mapping_version,
+                  packageVersion: packageArtifact?.artifact_version ?? current.packageVersion,
                   generatedArtifacts: pkg.artifacts,
                   executionId: execution.execution_id,
                   executionStatus: 'PENDING',

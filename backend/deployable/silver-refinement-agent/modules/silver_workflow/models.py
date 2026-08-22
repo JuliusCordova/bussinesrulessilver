@@ -223,13 +223,30 @@ class SilverMappingColumn(BaseModel):
     data_type: str = Field(min_length=1, max_length=200)
     nullable: bool = True
     source_column: str | None = Field(default=None, max_length=300)
-    transformation: str | None = Field(default=None, max_length=8000)
+    source_columns: list[str] = Field(default_factory=list)
+    transformation: dict[str, Any] | str | None = None
+    derivation_mode: str | None = Field(default=None, max_length=100)
+    natural_rule: str | None = Field(default=None, max_length=4000)
     description: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("source_columns")
+    @classmethod
+    def normalize_mapping_sources(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for raw_value in values:
+            value = raw_value.strip()
+            if not value:
+                raise ValueError("source_columns no puede contener valores vacíos")
+            if value not in normalized:
+                normalized.append(value)
+        return normalized
 
     @model_validator(mode="after")
     def validate_mapping_source(self) -> "SilverMappingColumn":
-        if not self.source_column and not self.transformation:
-            raise ValueError("Cada columna Silver debe indicar source_column o transformation")
+        if not self.source_column and not self.source_columns and not self.transformation:
+            raise ValueError("Cada columna Silver debe indicar source_column, source_columns o transformation")
+        if self.derivation_mode == "DERIVED_NL" and not self.natural_rule:
+            raise ValueError("DERIVED_NL requiere natural_rule para trazabilidad")
         return self
 
 

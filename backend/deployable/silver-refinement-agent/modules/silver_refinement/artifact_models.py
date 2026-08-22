@@ -40,7 +40,10 @@ class SilverColumn(BaseModel):
     nullable: bool = True
     description: str | None = None
     source_column: str | None = None
+    source_columns: list[str] = Field(default_factory=list)
     transformation: MappingTransformation | str | None = None
+    derivation_mode: str | None = None
+    natural_rule: str | None = None
     include: bool = True
     confidence: float | None = Field(default=None, ge=0, le=1)
     recommendation_reason: str | None = None
@@ -59,7 +62,7 @@ class SilverColumn(BaseModel):
 
         payload: dict[str, Any] = {"type": legacy}
         source = self.source_column or self.name
-        payload["source_columns"] = [source]
+        payload["source_columns"] = self.source_columns or [source]
 
         # The legacy CAST contract inferred its target type from SilverColumn.data_type.
         # Preserve that behavior while the frontend migrates to typed transformations.

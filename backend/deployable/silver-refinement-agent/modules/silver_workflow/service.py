@@ -179,7 +179,10 @@ class SilverWorkflowService:
             "data_type": raw.get("data_type") or raw.get("target_type"),
             "nullable": raw.get("nullable", True),
             "source_column": raw.get("source_column") or raw.get("sourceColumn"),
+            "source_columns": raw.get("source_columns") or raw.get("sourceColumns") or [],
             "transformation": raw.get("transformation") or raw.get("transformation_type") or raw.get("transformationType"),
+            "derivation_mode": raw.get("derivation_mode") or raw.get("derivationMode"),
+            "natural_rule": raw.get("natural_rule") or raw.get("naturalRule"),
         }
 
     @staticmethod
@@ -265,11 +268,12 @@ class SilverWorkflowService:
             raise WorkflowStateConflictError("No se puede editar el mapping mientras el proceso está ejecutándose")
 
         source_columns = {column.name for column in current.schema_context.columns}
-        unknown = sorted({
-            column.source_column
+        referenced_columns = {
+            reference
             for column in request.columns
-            if column.source_column and column.source_column not in source_columns
-        })
+            for reference in ([column.source_column] if column.source_column else []) + list(column.source_columns)
+        }
+        unknown = sorted(referenced_columns - source_columns)
         if unknown:
             raise ValueError("Las columnas de origen no existen en el esquema confirmado: " + ", ".join(unknown))
 

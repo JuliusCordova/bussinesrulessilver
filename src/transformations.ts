@@ -7,6 +7,7 @@ export type BackendTransformationType =
   | 'LOWER'
   | 'CONCAT'
   | 'DATE_PARSE'
+  | 'ARITHMETIC'
   | 'EXCLUDE';
 
 const transformationAliases: Record<string, BackendTransformationType> = {
@@ -25,6 +26,7 @@ const transformationAliases: Record<string, BackendTransformationType> = {
   CONCAT: 'CONCAT',
   DATE_PARSE: 'DATE_PARSE',
   PARSE_DATE: 'DATE_PARSE',
+  ARITHMETIC: 'ARITHMETIC',
   EXCLUDE: 'EXCLUDE',
   EXCLUDE_COLUMN: 'EXCLUDE',
 };

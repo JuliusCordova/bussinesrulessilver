@@ -221,7 +221,7 @@ function directMappingFromColumns(columns: CatalogField[]): MappingRule[] {
 }
 
 function mappingFromRecommendation(columns: Array<Record<string, unknown>>): MappingRule[] {
-  return columns.map((column) => {
+  return columns.map<MappingRule>((column) => {
     const transformation =
       column.transformation && typeof column.transformation === 'object'
         ? column.transformation as Record<string, unknown>
@@ -241,6 +241,11 @@ function mappingFromRecommendation(columns: Array<Record<string, unknown>>): Map
         transformation.parameters && typeof transformation.parameters === 'object'
           ? transformation.parameters as Record<string, unknown>
           : {},
+      sourceColumns: Array.isArray(transformation.source_columns)
+        ? transformation.source_columns.map(String)
+        : undefined,
+      derivationMode: column.derivation_mode === 'DERIVED_NL' ? 'DERIVED_NL' : undefined,
+      naturalRule: typeof column.natural_rule === 'string' ? column.natural_rule : undefined,
       confidence: typeof column.confidence === 'number' ? column.confidence : undefined,
       reason: typeof column.reason === 'string' ? column.reason : undefined,
       risk: typeof column.risk === 'string' ? column.risk : undefined,
@@ -752,7 +757,18 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
                     data_type: rule.targetType,
                     nullable: rule.nullable,
                     source_column: rule.sourceColumn || null,
-                    transformation: toBackendTransformation(rule.transformationType),
+                    source_columns: rule.sourceColumns?.length
+                      ? rule.sourceColumns
+                      : rule.sourceColumn ? [rule.sourceColumn] : [],
+                    transformation: {
+                      type: toBackendTransformation(rule.transformationType),
+                      source_columns: rule.sourceColumns?.length
+                        ? rule.sourceColumns
+                        : rule.sourceColumn ? [rule.sourceColumn] : [],
+                      parameters: rule.parameters ?? {},
+                    },
+                    derivation_mode: rule.derivationMode ?? null,
+                    natural_rule: rule.naturalRule ?? null,
                   })),
                 };
                 const fingerprint = JSON.stringify(payload);

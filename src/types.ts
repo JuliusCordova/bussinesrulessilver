@@ -103,6 +103,9 @@ export interface MappingRule {
   include: boolean;
   nullable: boolean;
   parameters?: Record<string, unknown>;
+  sourceColumns?: string[];
+  derivationMode?: 'DERIVED_NL';
+  naturalRule?: string;
   confidence?: number;
   reason?: string;
   risk?: string;

@@ -61,7 +61,7 @@ def compile_pyspark_expression(column: IntelligentMappingColumn) -> str:
 
     if transformation.type == TransformationType.EXCLUDE or not column.include:
         raise ValueError(f"La columna {target} está excluida")
-    if source is None and transformation.type != TransformationType.CONCAT:
+    if source is None and transformation.type not in {TransformationType.CONCAT, TransformationType.ARITHMETIC}:
         raise ValueError(f"La columna {target} no tiene fuente")
     if source is not None:
         source = _identifier(source, "source_column")
@@ -92,6 +92,12 @@ def compile_pyspark_expression(column: IntelligentMappingColumn) -> str:
     elif transformation.type == TransformationType.DATE_PARSE:
         fmt = transformation.parameters["format"]
         expression = f'F.to_date(F.col("{source}"), {fmt!r})'
+    elif transformation.type == TransformationType.ARITHMETIC:
+        operator = str(transformation.parameters["operator"]).upper()
+        symbols = {"ADD": "+", "SUBTRACT": "-", "MULTIPLY": "*", "DIVIDE": "/"}
+        left = _identifier(transformation.source_columns[0], "source_column")
+        right = _identifier(transformation.source_columns[1], "source_column")
+        expression = f'(F.col("{left}") {symbols[operator]} F.col("{right}"))'
     else:
         raise ValueError(f"Transformación no soportada: {transformation.type.value}")
 

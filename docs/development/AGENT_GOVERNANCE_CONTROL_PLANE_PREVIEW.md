@@ -76,6 +76,28 @@ The executive view deliberately keeps provider deployment terminology secondary.
 
 > ¿Cuántos agentes tenemos, quién responde por ellos, qué riesgo tienen y cuáles están realmente gobernados?
 
+## Estate scope — frozen decision
+
+The governed universe is **all Google ADK agents/deployments discoverable in the configured Google Cloud scope**.
+
+Business Rules Silver is **not** the functional scope. It is only the canonical UI/UX reference.
+
+The control plane must therefore include ADK resources independently of the product or repository that created them, including for example Ayniq, PrimaDemo, Business Rules Silver and any other Google ADK estate discovered from the configured projects/regions.
+
+Rules:
+
+- every discovered `google-adk` deployment must be represented in the technical inventory;
+- no resource is hidden because it lacks governance metadata;
+- resources without owner/risk/autonomy/control evidence remain visible as `not_assessed` / pending governance;
+- multiple Reasoning Engine deployments may belong to one logical governed agent;
+- the executive view is agent-centric; provider deployments/versions are secondary drill-down data;
+- discovery coverage must not be permanently hard-coded to one product or one agent family;
+- when multiple Google Cloud projects/regions are configured, discovery must consolidate them into the same control-plane estate.
+
+North Star:
+
+> Todos los agentes Google ADK existentes dentro del alcance GCP configurado deben aparecer en el dashboard, estén gobernados o no.
+
 ## Independent preview files
 
 ```text

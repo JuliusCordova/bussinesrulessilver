@@ -14,24 +14,18 @@
     return response.json();
   }
 
-  function list(payload) {
+  function workflowList(payload) {
     if (Array.isArray(payload)) return payload;
     if (Array.isArray(payload?.workflows)) return payload.workflows;
     return [];
   }
 
-  function rulesOf(workflow) {
-    return Array.isArray(workflow?.quality_rules) ? workflow.quality_rules : [];
+  function runtimeList(payload) {
+    return Array.isArray(payload?.executions) ? payload.executions : [];
   }
 
-  function qualityEvidence(workflow) {
-    const candidates = [
-      workflow?.validation?.quality,
-      workflow?.execution?.quality,
-      workflow?.validation?.result?.quality,
-      workflow?.execution?.result?.quality,
-    ];
-    return candidates.find((item) => item && typeof item === 'object') || null;
+  function rulesOf(workflow) {
+    return Array.isArray(workflow?.quality_rules) ? workflow.quality_rules : [];
   }
 
   function processName(workflow) {
@@ -39,7 +33,7 @@
   }
 
   function runtimeDecision(evidence) {
-    return String(evidence?.runtime_decision || evidence?.outcome || '').toUpperCase();
+    return String(evidence?.runtime_decision || '').toUpperCase();
   }
 
   function setText(id, value, fallback='No disponible') {
@@ -71,12 +65,12 @@
     });
   }
 
-  function render(workflows) {
+  function renderConfigured(workflows, runtimeExecutions) {
     const governed = workflows.filter((workflow) => rulesOf(workflow).length || workflow?.quality_rules_version != null);
     const rows = governed.flatMap((workflow) => rulesOf(workflow).map((rule) => ({ workflow, rule, process: processName(workflow) })));
     const approved = rows.filter(({rule}) => String(rule?.status || '').toUpperCase() === 'APPROVED');
     const versions = governed.map((workflow) => Number(workflow?.quality_rules_version)).filter(Number.isFinite);
-    const evidences = governed.map((workflow) => ({ workflow, evidence: qualityEvidence(workflow) })).filter((item) => item.evidence);
+    const runtimeBySpec = new Map(runtimeExecutions.map((item) => [String(item.spec_id || ''), item]));
 
     setText('qualityApprovedRules', int(approved.length), '0');
     setText('qualityRulesVersion', versions.length ? `v${Math.max(...versions)}` : null);
@@ -84,29 +78,9 @@
     setText('overviewQualityRules', int(approved.length), '0');
     setText('overviewQualityVersion', versions.length ? `v${Math.max(...versions)}` : '—', '—');
 
-    const scores = evidences.map(({evidence}) => Number(evidence?.quality_score)).filter(Number.isFinite);
-    setText('qualityScore', scores.length ? `${scores[scores.length - 1].toFixed(1)}%` : null);
-
-    const warnings = evidences.map(({evidence}) => Number(evidence?.warning_rows)).filter(Number.isFinite);
-    setText('qualityWarnings', warnings.length ? int(warnings.reduce((a,b)=>a+b,0)) : null);
-    const quarantine = evidences.map(({evidence}) => Number(evidence?.continued_quarantined_rows ?? evidence?.quarantined_rows)).filter(Number.isFinite);
-    setText('qualityQuarantineRows', quarantine.length ? int(quarantine.reduce((a,b)=>a+b,0)) : null);
-    const blocked = evidences.filter(({evidence}) => runtimeDecision(evidence) === 'BLOCK_LOAD').length;
-    setText('qualityBlockedLoads', evidences.length ? int(blocked) : null);
-
-    const decisionCounts = new Map();
-    evidences.forEach(({evidence}) => {
-      const decision = runtimeDecision(evidence);
-      if (decision) decisionCounts.set(decision, (decisionCounts.get(decision) || 0) + 1);
-    });
-    const order = ['PASS','OBSERVE_ONLY','WARN','QUARANTINE','BLOCK_LOAD'];
-    $('qualityRuntimeDecisions').innerHTML = decisionCounts.size
-      ? order.map((name) => `<div class="quality-decision ${name.toLowerCase().replace('_','-')}"><span>${name.replace('_',' ')}</span><strong>${int(decisionCounts.get(name) || 0)}</strong><small>ejecuciones observadas</small></div>`).join('')
-      : '<div class="quality-empty">El backend aún no expone evidencia runtime de calidad en los workflows observables.</div>';
-
     $('qualityProcessCoverage').innerHTML = governed.length
       ? governed.slice(0, 12).map((workflow) => {
-          const evidence = qualityEvidence(workflow);
+          const evidence = runtimeBySpec.get(String(workflow.spec_id || ''));
           const decision = runtimeDecision(evidence) || 'SIN EVIDENCIA RUNTIME';
           return `<div class="quality-process-row"><div><strong>${esc(processName(workflow))}</strong><small>${esc(workflow.workflow_id || '')}</small></div><span>v${esc(workflow.quality_rules_version ?? '—')}</span><b class="quality-chip ${decision.toLowerCase().replaceAll('_','-')}">${esc(decision.replaceAll('_',' '))}</b></div>`;
         }).join('')
@@ -134,17 +108,56 @@
     });
   }
 
+  function renderRuntime(summary, executionsPayload) {
+    const sourceAvailable = summary?.source_available === true && executionsPayload?.source_available === true;
+    const executions = sourceAvailable ? runtimeList(executionsPayload) : [];
+
+    if (!sourceAvailable) {
+      setText('qualityScore', null);
+      setText('qualityWarnings', null);
+      setText('qualityQuarantineRows', null);
+      setText('qualityBlockedLoads', null);
+      $('qualityRuntimeDecisions').innerHTML = '<div class="quality-empty">Sin evidencia runtime persistida. El dashboard no infiere resultados desde la configuración.</div>';
+      return executions;
+    }
+
+    setText('qualityScore', summary.latest_quality_score != null ? `${Number(summary.latest_quality_score).toFixed(1)}%` : null);
+    setText('qualityWarnings', summary.evidence_count > 0 ? int(summary.total_warning_rows) : null);
+    setText('qualityQuarantineRows', summary.evidence_count > 0 ? int(summary.total_quarantined_rows) : null);
+    setText('qualityBlockedLoads', summary.evidence_count > 0 ? int(summary.block_load_executions) : null);
+
+    const decisionCounts = new Map();
+    executions.forEach((evidence) => {
+      const decision = runtimeDecision(evidence);
+      if (decision) decisionCounts.set(decision, (decisionCounts.get(decision) || 0) + 1);
+    });
+    const order = ['PASS','OBSERVE_ONLY','WARN','QUARANTINE','BLOCK_LOAD'];
+    $('qualityRuntimeDecisions').innerHTML = decisionCounts.size
+      ? order.map((name) => `<div class="quality-decision ${name.toLowerCase().replace('_','-')}"><span>${name.replace('_',' ')}</span><strong>${int(decisionCounts.get(name) || 0)}</strong><small>ejecuciones con evidencia</small></div>`).join('')
+      : '<div class="quality-empty">La fuente runtime existe, pero todavía no contiene ejecuciones con evidencia.</div>';
+    return executions;
+  }
+
   async function load() {
-    try {
-      const payload = await get('/silver-workflows?limit=50');
-      render(list(payload));
-    } catch (error) {
-      console.warn('Quality governance preview: evidence unavailable', error);
-      render([]);
+    const [workflowsResult, summaryResult, executionsResult] = await Promise.allSettled([
+      get('/silver-workflows?limit=50'),
+      get('/agentops/quality/summary'),
+      get('/agentops/quality/executions?limit=50'),
+    ]);
+
+    const workflows = workflowsResult.status === 'fulfilled' ? workflowList(workflowsResult.value) : [];
+    const summary = summaryResult.status === 'fulfilled' ? summaryResult.value : { source_available: false };
+    const executionsPayload = executionsResult.status === 'fulfilled' ? executionsResult.value : { source_available: false, executions: [] };
+    const runtimeExecutions = renderRuntime(summary, executionsPayload);
+    renderConfigured(workflows, runtimeExecutions);
+
+    if (workflowsResult.status === 'rejected') {
+      console.warn('Quality governance preview: workflow contracts unavailable', workflowsResult.reason);
       const source = $('qualitySourceStatus');
-      if (source) source.textContent = 'Backend sin evidencia disponible';
-      const overview = $('overviewQualityState');
-      if (overview) overview.textContent = 'Backend sin evidencia disponible';
+      if (source) source.textContent = 'Backend sin contratos de calidad disponibles';
+    }
+    if (summaryResult.status === 'rejected' || executionsResult.status === 'rejected') {
+      console.warn('Quality governance preview: runtime evidence unavailable', summaryResult.reason || executionsResult.reason);
     }
   }
 

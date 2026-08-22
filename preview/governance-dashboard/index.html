@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="./theme-red.css" />
   <link rel="stylesheet" href="./spa.css" />
   <link rel="stylesheet" href="./product-polish.css" />
+  <link rel="stylesheet" href="./quality.css" />
 </head>
 <body>
   <div class="app-shell">
@@ -21,6 +22,7 @@
       <nav class="nav" aria-label="Navegación del preview">
         <button class="nav-item active" type="button" data-view-target="overview"><span>◫</span>Resumen ejecutivo</button>
         <button class="nav-item" type="button" data-view-target="finops"><span>◉</span>FinOps IA</button>
+        <button class="nav-item" type="button" data-view-target="quality"><span>✓</span>Calidad de datos</button>
         <button class="nav-item" type="button" data-view-target="agents"><span>◇</span>Agentes</button>
         <button class="nav-item" type="button" data-view-target="runs"><span>↻</span>Ejecuciones</button>
         <button class="nav-item" type="button" data-view-target="health"><span>✓</span>Calidad & salud</button>
@@ -86,6 +88,45 @@
         <div class="finops-note"><i>ⓘ</i><div><strong>Semántica de costo:</strong> los USD solo se muestran cuando provienen de Cloud Billing Export. El costo facturado corresponde primero al proyecto GCP; ningún costo se presenta como “por agente” o “por run” hasta definir y validar la regla de atribución.</div></div>
       </section>
 
+
+      <section class="quality-section" id="quality" aria-label="Gobierno de calidad de datos">
+        <div class="quality-head">
+          <div>
+            <span class="quality-kicker">QUALITY GOVERNANCE</span>
+            <h2>Calidad gobernada · del diseño al runtime</h2>
+            <p>Reglas aprobadas, decisiones de ejecución y evidencia por proceso Silver. Solo se muestran datos trazables disponibles en backend.</p>
+          </div>
+          <span id="qualitySourceStatus" class="quality-source-badge pending">Consultando…</span>
+        </div>
+
+        <div class="quality-kpis" aria-label="Indicadores de calidad">
+          <article class="quality-kpi hero"><span>Quality score</span><strong id="qualityScore">No disponible</strong><small>Última evidencia observable</small></article>
+          <article class="quality-kpi"><span>Reglas aprobadas</span><strong id="qualityApprovedRules">—</strong><small>Contrato gobernado vigente</small></article>
+          <article class="quality-kpi"><span>Quality rules version</span><strong id="qualityRulesVersion">No disponible</strong><small>Máxima versión observable</small></article>
+          <article class="quality-kpi warn"><span>Warnings</span><strong id="qualityWarnings">No disponible</strong><small>Eventos runtime trazables</small></article>
+          <article class="quality-kpi quarantine"><span>Filas quarantine</span><strong id="qualityQuarantineRows">No disponible</strong><small>Excluidas de Silver por gate</small></article>
+          <article class="quality-kpi block"><span>Block load</span><strong id="qualityBlockedLoads">No disponible</strong><small>Cargas bloqueadas por calidad</small></article>
+        </div>
+
+        <div class="quality-grid quality-top-grid">
+          <article class="quality-panel">
+            <div class="quality-panel-head"><div><h3>Decisión de runtime</h3><p>Distribución de la última evidencia disponible.</p></div><span class="quality-soft-badge">Gates gobernados</span></div>
+            <div id="qualityRuntimeDecisions" class="quality-decision-grid"><div class="quality-empty">Sin evidencia runtime disponible.</div></div>
+          </article>
+          <article class="quality-panel">
+            <div class="quality-panel-head"><div><h3>Cobertura por proceso</h3><p>Procesos Silver con contrato de calidad versionado.</p></div></div>
+            <div id="qualityProcessCoverage" class="quality-process-list"><div class="quality-empty">Consultando procesos…</div></div>
+          </article>
+        </div>
+
+        <article class="quality-panel quality-rules-panel">
+          <div class="quality-panel-head"><div><h3>Reglas gobernadas</h3><p>Dimensión, severidad, runtime action, versión y estado. Selecciona una fila para inspeccionar su evidencia.</p></div><span id="qualityRuleCountBadge" class="quality-soft-badge">— reglas</span></div>
+          <div class="quality-table-wrap"><table><thead><tr><th>Regla</th><th>Proceso</th><th>Dimensión</th><th>Severidad</th><th>Runtime action</th><th>Versión</th><th>Estado</th></tr></thead><tbody id="qualityRulesTable"><tr><td colspan="7" class="quality-empty">Sin reglas disponibles.</td></tr></tbody></table></div>
+        </article>
+
+        <div class="quality-note"><i>ⓘ</i><div><strong>Semántica:</strong> OBSERVE_ONLY mide sin alterar la carga; WARN registra y continúa; QUARANTINE excluye filas fallidas; BLOCK_LOAD bloquea la escritura Silver. La vista no fabrica métricas cuando la evidencia no está persistida.</div></div>
+      </section>
+
       <section class="dashboard-grid middle-grid">
         <article class="panel history-panel" id="historyPanel"><div class="panel-header"><div><h2>Historial persistente de agentes</h2><p>Selecciona una fila para abrir el detalle completo del run</p></div><div class="header-badges"><span id="historyCount" class="soft-badge">— visibles</span><span class="persistence-badge">BigQuery persistente</span></div></div><div id="filterBar" class="filter-bar"></div><div class="table-wrap"><table><thead><tr><th>Agente</th><th>Estado</th><th>Origen</th><th>Destino</th><th>Solicitado por</th><th>Eventos</th><th>Duración</th><th>Finalizado</th></tr></thead><tbody id="runsTable"></tbody></table></div></article>
         <aside class="right-stack"><article class="panel health-panel" id="health"><div class="panel-header compact"><div><h2>Estado de la plataforma</h2><p>Selecciona un componente para inspeccionarlo</p></div><span id="healthOverall" class="health-status">—</span></div><div id="healthList" class="health-list"></div></article><article class="panel alerts-panel" id="alerts"><div class="panel-header compact"><div><h2>Alertas AgentOps</h2><p>Clic para ver severidad y contrato registrado</p></div><span id="alertsBadge" class="soft-badge">—</span></div><div id="alertsList" class="alerts-list"></div></article></aside>
@@ -105,5 +146,6 @@
   <script src="./finops.js"></script>
   <script src="./router.js"></script>
   <script src="./finops-polish.js"></script>
+  <script src="./quality.js"></script>
 </body>
 </html>

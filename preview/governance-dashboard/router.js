@@ -4,6 +4,7 @@
   const META = {
     overview: ['Gobierno DataOps — Business Rules Silver','Observabilidad, trazabilidad y gobierno del refinamiento Bronze → Silver.','Gemini ADK + AgentOps · Persistencia BigQuery'],
     finops: ['FinOps IA · Consumo & Costos','Visión financiera y operativa del consumo real de IA en Business Rules Silver.','Cloud Billing + AgentOps · Costo real y atribución gobernada'],
+    quality: ['Calidad de datos · Gobierno & runtime','Reglas aprobadas, decisiones de ejecución y evidencia observable por proceso Silver.','Quality Governance · Contratos versionados y runtime gates'],
     agents: ['Agentes · Catálogo & desempeño','Capacidades ADK, modelos, tools, actividad y trazabilidad por agente.','Gemini ADK · Registro gobernado'],
     runs: ['Ejecuciones · Trazabilidad operativa','Historial persistente, estados, duración y drill-down de runs gobernados.','AgentOps · BigQuery persistente'],
     health: ['Calidad & salud · Plataforma','Disponibilidad, latencia y señales operativas de los componentes DataOps.','Observabilidad · Health checks'],
@@ -28,6 +29,7 @@
     rail.className = 'overview-executive-rail';
     rail.innerHTML = `
       <article class="overview-rail-card finops-rail-card"><header><span>FinOps IA</span><button type="button" data-view-link="finops">Ver detalle →</button></header><div class="rail-metrics"><div><small>Tokens</small><strong id="overviewFinopsTokens">—</strong></div><div><small>Runs</small><strong id="overviewFinopsRuns">—</strong></div><div><small>Costo producto</small><strong id="overviewFinopsCost">No disponible</strong></div></div><div id="overviewFinopsState" class="rail-state pending">Consultando cobertura real…</div></article>
+      <article class="overview-rail-card quality-rail-card"><header><span>Calidad</span><button type="button" data-view-link="quality">Ver detalle →</button></header><div class="rail-metrics two"><div><small>Reglas aprobadas</small><strong id="overviewQualityRules">—</strong></div><div><small>Versión</small><strong id="overviewQualityVersion">—</strong></div></div><div id="overviewQualityState" class="rail-state pending">Consultando evidencia…</div></article>
       <article class="overview-rail-card"><header><span>Agentes</span><button type="button" data-view-link="agents">Ver catálogo →</button></header><div class="rail-highlight"><strong id="overviewAgentCount">—</strong><span>agentes registrados</span></div><p>Modelos, tools, desempeño y actividad observable.</p></article>
       <article class="overview-rail-card"><header><span>Operación</span><button type="button" data-view-link="runs">Ver ejecuciones →</button></header><div class="rail-metrics two"><div><small>Runs</small><strong id="overviewRuns">—</strong></div><div><small>Alertas</small><strong id="overviewAlerts">—</strong></div></div></article>`;
     return rail;
@@ -109,7 +111,7 @@
     views.overview.appendChild(content);
     const shortcuts=document.createElement('div');
     shortcuts.className='overview-quick-grid';
-    shortcuts.innerHTML=quick('finops','↗','FinOps IA','Consumo real, costo y atribución gobernada.')+quick('agents','◇','Agentes','Catálogo ADK, tools y desempeño observable.')+quick('runs','↻','Ejecuciones','Historial, estados y trazabilidad por run.');
+    shortcuts.innerHTML=quick('finops','↗','FinOps IA','Consumo real, costo y atribución gobernada.')+quick('quality','✓','Calidad','Reglas gobernadas, runtime gates y evidencia.')+quick('agents','◇','Agentes','Catálogo ADK, tools y desempeño observable.')+quick('runs','↻','Ejecuciones','Historial, estados y trazabilidad por run.');
     views.overview.appendChild(shortcuts);
 
     const finops=document.getElementById('finops');
@@ -120,6 +122,7 @@
       views.finops.append(nav,finops);
     }
 
+    const quality=document.getElementById('quality'); if(quality) views.quality.appendChild(quality);
     const agentPanel=$('.agents-registry-panel'); if(agentPanel) views.agents.appendChild(agentPanel);
     const history=document.getElementById('historyPanel'); if(history) views.runs.appendChild(history);
     const exec=$('.executions-panel'); if(exec) views.runs.appendChild(exec);

@@ -300,6 +300,7 @@ PHYSICAL_DESIGN = json.loads(__PHYSICAL_DESIGN_JSON__)
 REQUIRED_COLUMNS = __REQUIRED_COLUMNS__
 QUALITY_RULES = json.loads(__QUALITY_RULES_JSON__)
 EXECUTION_ID = os.getenv("EXECUTION_ID", "unknown")
+QUALITY_EVIDENCE_TABLE = os.getenv("QUALITY_EVIDENCE_TABLE")
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("silver-refinement")
@@ -694,6 +695,43 @@ def validate_quality(df):
     )
 
 
+def persist_quality_evidence(spark: SparkSession, quality: dict) -> None:
+    if not QUALITY_EVIDENCE_TABLE:
+        raise ValueError("QUALITY_EVIDENCE_TABLE es obligatorio para ejecución gobernada")
+
+    recorded_at = datetime.now(timezone.utc)
+    row = {
+        "execution_id": EXECUTION_ID,
+        "spec_id": SPEC_ID,
+        "mapping_version": int(MAPPING_VERSION),
+        "recorded_at": recorded_at,
+        "gate_status": str(quality.get("status") or "UNKNOWN"),
+        "runtime_decision": str(quality.get("runtime_decision") or quality.get("outcome") or "UNKNOWN"),
+        "quality_score": float(quality.get("quality_score") or 0.0),
+        "total_rows": int(quality.get("total_rows") or 0),
+        "failed_rows": int(quality.get("failed_rows") or 0),
+        "warning_rows": int(quality.get("warning_rows") or 0),
+        "observed_failure_rows": int(quality.get("observed_failure_rows") or 0),
+        "quarantined_rows": int(quality.get("quarantined_rows") or 0),
+        "continued_quarantined_rows": int(quality.get("continued_quarantined_rows") or 0),
+        "quarantine_events": int(quality.get("quarantine_events") or 0),
+        "table_level_blocking_failures": int(quality.get("table_level_blocking_failures") or 0),
+        "table_level_warnings": int(quality.get("table_level_warnings") or 0),
+        "quarantine_table": str(quality.get("quarantine_table") or ""),
+        "rule_results_json": json.dumps(quality.get("rule_results") or [], ensure_ascii=False, default=str),
+        "configured_rules_json": json.dumps(quality.get("configured_rules") or [], ensure_ascii=False, default=str),
+    }
+    evidence_df = spark.createDataFrame([row])
+    (
+        evidence_df.write.format("bigquery")
+        .option("table", QUALITY_EVIDENCE_TABLE)
+        .option("writeMethod", "direct")
+        .mode("append")
+        .save()
+    )
+
+
+
 def calculate_next_watermark(df):
     watermark_column = LOAD_STRATEGY.get("watermark_column")
     if not watermark_column:
@@ -813,6 +851,7 @@ def main() -> dict:
         silver_df = transform(bronze_df)
         quality, quarantine_df, silver_output_df = validate_quality(silver_df)
         next_watermark = calculate_next_watermark(bronze_df)
+        persist_quality_evidence(spark, quality)
 
         if quality["status"] != "PASSED":
             if quarantine_df is not None and quality["quarantine_events"] > 0:

@@ -382,8 +382,19 @@ function buildArtifactContract(workflow: WorkflowState) {
       nullable:
         rule.nullable &&
         !(workflow.businessKeys ?? []).includes(rule.targetColumn),
-      source_column: rule.sourceColumn,
-      transformation: toBackendTransformation(rule.transformationType),
+      source_column: rule.sourceColumn || null,
+      source_columns: rule.sourceColumns?.length
+        ? rule.sourceColumns
+        : rule.sourceColumn ? [rule.sourceColumn] : [],
+      transformation: {
+        type: toBackendTransformation(rule.transformationType),
+        source_columns: rule.sourceColumns?.length
+          ? rule.sourceColumns
+          : rule.sourceColumn ? [rule.sourceColumn] : [],
+        parameters: rule.parameters ?? {},
+      },
+      derivation_mode: rule.derivationMode ?? null,
+      natural_rule: rule.naturalRule ?? null,
       include: true,
       confidence: rule.confidence,
       recommendation_reason: rule.reason,
@@ -449,6 +460,8 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
   const [showDataprocConfirm, setShowDataprocConfirm] = useState(false);
   const [mappingImpact, setMappingImpact] = useState<MappingImpactResponse>();
   const [mappingImpactFingerprint, setMappingImpactFingerprint] = useState<string>();
+  const [derivedNlProposal, setDerivedNlProposal] = useState<MappingRule>();
+  const [derivedNlInterpretation, setDerivedNlInterpretation] = useState<string>();
 
   const activeIndex = stepOrder.indexOf(workflow.activeStep);
   const activeStep = steps[activeIndex];
@@ -718,6 +731,63 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
                   backendMessage: JSON.stringify(response),
                 }));
               });
+            }}
+            derivedNlProposal={derivedNlProposal}
+            derivedNlInterpretation={derivedNlInterpretation}
+            onGenerateDerivedNl={async (intent) => {
+              const naturalRule = intent.trim();
+              if (!naturalRule) {
+                applyError(new Error('Escribe una regla en lenguaje natural antes de interpretarla.'));
+                return;
+              }
+              await runAction('Interpretando regla natural con mapping-advisor...', async () => {
+                const request = {
+                  ...buildAgentRequest(workflow),
+                  context: `DERIVED_NL:${naturalRule}`,
+                };
+                const response = await silverApi.runSilverAgent('mapping-advisor', request);
+                const evidence = response.evidence ?? parseAgentJson(response.output);
+                const proposal = evidence.proposal;
+                if (!evidence.valid || !proposal || typeof proposal !== 'object' || Array.isArray(proposal)) {
+                  throw new Error('El backend no validó una propuesta DERIVED_NL utilizable.');
+                }
+                const mapped = mappingFromRecommendation([proposal as Record<string, unknown>])[0];
+                if (!mapped || mapped.derivationMode !== 'DERIVED_NL') {
+                  throw new Error('La propuesta DERIVED_NL perdió su contrato de trazabilidad.');
+                }
+                setDerivedNlProposal(mapped);
+                setDerivedNlInterpretation(String(evidence.interpretation ?? 'Entendí tu regla y requiere confirmación.'));
+                setWorkflow((current) => ({
+                  ...current,
+                  agentSessionId: response.session_id,
+                  ...demoWorkflowPatch('Propuesta DERIVED_NL validada y pendiente de aprobación humana'),
+                  backendMessage: JSON.stringify(response),
+                }));
+              });
+            }}
+            onConfirmDerivedNl={() => {
+              if (!derivedNlProposal) return;
+              const currentRows = workflow.mappingRules?.length
+                ? workflow.mappingRules
+                : directMappingFromColumns(workflow.sourceColumns ?? []);
+              if (currentRows.some((row) => row.include && row.targetColumn === derivedNlProposal.targetColumn)) {
+                applyError(new Error(`Ya existe una columna destino ${derivedNlProposal.targetColumn}; ajusta la regla antes de confirmarla.`));
+                return;
+              }
+              setMappingImpact(undefined);
+              setMappingImpactFingerprint(undefined);
+              setWorkflow((current) => ({
+                ...current,
+                mappingRules: [...currentRows, derivedNlProposal],
+                mappingSource: 'DERIVED_NL',
+                ...demoWorkflowPatch('Derivación NL confirmada por usuario e incorporada al mapping'),
+              }));
+              setDerivedNlProposal(undefined);
+              setDerivedNlInterpretation(undefined);
+            }}
+            onRejectDerivedNl={() => {
+              setDerivedNlProposal(undefined);
+              setDerivedNlInterpretation(undefined);
             }}
             impactAnalysis={mappingImpact}
             onMappingChange={(rules) => {
@@ -1715,6 +1785,11 @@ function MappingStep({
   workflow,
   onGenerateDeterministic,
   onGenerateAgent,
+  derivedNlProposal,
+  derivedNlInterpretation,
+  onGenerateDerivedNl,
+  onConfirmDerivedNl,
+  onRejectDerivedNl,
   onMappingChange,
   impactAnalysis,
   onNext,
@@ -1722,6 +1797,11 @@ function MappingStep({
   workflow: WorkflowState;
   onGenerateDeterministic: () => void;
   onGenerateAgent: () => void;
+  derivedNlProposal?: MappingRule;
+  derivedNlInterpretation?: string;
+  onGenerateDerivedNl: (intent: string) => void;
+  onConfirmDerivedNl: () => void;
+  onRejectDerivedNl: () => void;
   onMappingChange: (rules: MappingRule[]) => void;
   impactAnalysis?: MappingImpactResponse;
   onNext: () => void;
@@ -1731,7 +1811,8 @@ function MappingStep({
     ? workflow.mappingRules
     : directMappingFromColumns(sourceColumns);
   const typeOptions = Array.from(new Set(sourceColumns.map((column) => column.type)));
-  const transformations = ['DIRECT', 'TRIM', 'UPPER', 'LOWER', 'CAST', 'EXCLUDE'];
+  const transformations = ['DIRECT', 'TRIM', 'UPPER', 'LOWER', 'CAST', 'ARITHMETIC', 'EXCLUDE'];
+  const [derivedIntent, setDerivedIntent] = useState('');
 
   function updateRow(index: number, patch: Partial<MappingRule>) {
     onMappingChange(rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
@@ -1770,6 +1851,41 @@ function MappingStep({
         </div>
       </div>
 
+      <div className="sprintNote">
+        <strong>Crear campo derivado con lenguaje natural</strong>
+        <span>Gemini interpreta la intención; el backend valida el contrato y tú decides si se incorpora al mapping.</span>
+        <label className="field">
+          <span>Regla de negocio</span>
+          <textarea
+            value={derivedIntent}
+            onChange={(event) => setDerivedIntent(event.target.value)}
+            placeholder="Ejemplo: crear monto_neto restando descuento a monto_bruto"
+            rows={3}
+          />
+        </label>
+        <div className="actions">
+          <button onClick={() => onGenerateDerivedNl(derivedIntent)} disabled={!derivedIntent.trim()}>
+            Interpretar regla con Gemini
+          </button>
+        </div>
+      </div>
+
+      {derivedNlProposal && (
+        <div className="validationBox">
+          <strong>DERIVED_NL · PENDIENTE DE APROBACIÓN</strong>
+          <span>{derivedNlInterpretation ?? 'Entendí tu regla y la convertí a un contrato estructurado.'}</span>
+          <small>Destino: {derivedNlProposal.targetColumn} · Tipo: {derivedNlProposal.targetType}</small>
+          <small>Fuentes: {(derivedNlProposal.sourceColumns ?? [derivedNlProposal.sourceColumn]).filter(Boolean).join(', ')}</small>
+          <small>Transformación: {derivedNlProposal.transformationType}</small>
+          <small>Regla original: {derivedNlProposal.naturalRule}</small>
+          {derivedNlProposal.risk && <small className="riskText">Riesgo: {derivedNlProposal.risk}</small>}
+          <div className="actions">
+            <button className="primary" onClick={onConfirmDerivedNl}>Confirmar derivación</button>
+            <button onClick={onRejectDerivedNl}>Rechazar</button>
+          </div>
+        </div>
+      )}
+
       <div className="mappingEditor">
         <div className="mappingEditorHeader">
           <strong>Usar</strong><strong>Origen</strong><strong>Destino</strong>
@@ -1786,22 +1902,26 @@ function MappingStep({
                 transformationType: event.target.checked ? row.transformationType : 'EXCLUDE',
               })}
             />
-            <select
-              value={row.sourceColumn}
-              onChange={(event) => {
-                const field = sourceColumns.find((column) => column.name === event.target.value);
-                updateRow(index, {
-                  sourceColumn: event.target.value,
-                  targetColumn: row.targetColumn || event.target.value,
-                  targetType: field?.type ?? row.targetType,
-                  nullable: field?.mode !== 'REQUIRED',
-                });
-              }}
-            >
-              {sourceColumns.map((column) => (
-                <option key={column.name} value={column.name}>{column.name}</option>
-              ))}
-            </select>
+            {row.derivationMode === 'DERIVED_NL' ? (
+              <span title={row.naturalRule}>{(row.sourceColumns ?? [row.sourceColumn]).filter(Boolean).join(' + ')}</span>
+            ) : (
+              <select
+                value={row.sourceColumn}
+                onChange={(event) => {
+                  const field = sourceColumns.find((column) => column.name === event.target.value);
+                  updateRow(index, {
+                    sourceColumn: event.target.value,
+                    targetColumn: row.targetColumn || event.target.value,
+                    targetType: field?.type ?? row.targetType,
+                    nullable: field?.mode !== 'REQUIRED',
+                  });
+                }}
+              >
+                {sourceColumns.map((column) => (
+                  <option key={column.name} value={column.name}>{column.name}</option>
+                ))}
+              </select>
+            )}
             <input
               value={row.targetColumn}
               onChange={(event) => updateRow(index, { targetColumn: event.target.value })}
@@ -1816,6 +1936,7 @@ function MappingStep({
             </select>
             <select
               value={row.transformationType}
+              disabled={row.derivationMode === 'DERIVED_NL'}
               onChange={(event) => updateRow(index, {
                 transformationType: event.target.value,
                 include: event.target.value !== 'EXCLUDE',
@@ -1835,6 +1956,7 @@ function MappingStep({
               <span>{row.reason ?? 'Sin justificacion registrada.'}</span>
               {row.confidence != null && <small>Confianza: {Math.round(row.confidence * 100)}%</small>}
               {row.risk && <small className="riskText">Riesgo: {row.risk}</small>}
+              {row.derivationMode === 'DERIVED_NL' && <small>DERIVED_NL · {row.naturalRule}</small>}
               {row.requiresApproval && <em>REQUIERE APROBACION</em>}
             </div>
           </article>

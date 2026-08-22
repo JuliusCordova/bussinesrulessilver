@@ -3,6 +3,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from modules.silver_intelligent_mapping.compiler import compile_pyspark_expression
+from modules.silver_intelligent_mapping.models import (
+    IntelligentMappingColumn,
+    MappingTransformation,
+    TransformationType,
+)
+
 from .profile_service import BigQueryTableProfiler
 
 
@@ -159,6 +166,107 @@ def recommend_column_mappings(
         "recommendation_engine": "gemini-adk-with-deterministic-evidence",
         "requires_human_approval": True,
         "policy": "Toda recomendacion es editable y requiere confirmacion humana.",
+    }
+
+
+
+def validate_derived_nl_mapping_proposal(
+    columns_json: str,
+    natural_rule: str,
+    proposal_json: str,
+) -> dict[str, Any]:
+    """Validate a Gemini-derived mapping against schema and executable whitelist."""
+    columns = json.loads(columns_json)
+    proposal = json.loads(proposal_json)
+    if not isinstance(proposal, dict):
+        raise ValueError("La propuesta DERIVED_NL debe ser un objeto JSON")
+
+    natural_rule = natural_rule.strip()
+    if not natural_rule:
+        raise ValueError("DERIVED_NL requiere una regla natural no vacía")
+
+    schema = {
+        str(item.get("name") or item.get("source_column") or ""): str(
+            item.get("type") or item.get("data_type") or "STRING"
+        ).upper()
+        for item in columns
+        if isinstance(item, dict) and (item.get("name") or item.get("source_column"))
+    }
+    transformation_raw = proposal.get("transformation")
+    if not isinstance(transformation_raw, dict):
+        raise ValueError("DERIVED_NL requiere transformation estructurada")
+
+    transformation = MappingTransformation.model_validate(transformation_raw)
+    source_columns = list(transformation.source_columns)
+    unknown = sorted(set(source_columns) - set(schema))
+    if unknown:
+        raise ValueError(
+            "La propuesta DERIVED_NL referencia columnas inexistentes: " + ", ".join(unknown)
+        )
+
+    numeric_types = {"INT64", "INTEGER", "FLOAT64", "FLOAT", "NUMERIC", "BIGNUMERIC"}
+    if transformation.type == TransformationType.ARITHMETIC:
+        non_numeric = [name for name in source_columns if schema.get(name) not in numeric_types]
+        if non_numeric:
+            raise ValueError(
+                "ARITHMETIC solo admite columnas numéricas: " + ", ".join(non_numeric)
+            )
+
+    target_column = str(proposal.get("target_column") or "").strip()
+    target_type = str(proposal.get("target_type") or "").strip().upper()
+    if not target_column or not target_type:
+        raise ValueError("DERIVED_NL requiere target_column y target_type")
+
+    column = IntelligentMappingColumn(
+        source_column=source_columns[0] if source_columns else None,
+        target_column=target_column,
+        target_type=target_type,
+        nullable=bool(proposal.get("nullable", True)),
+        include=True,
+        transformation=transformation,
+        confidence=float(proposal.get("confidence", 0.8)),
+        reason=str(proposal.get("reason") or "Interpretación DERIVED_NL validada contra el schema confirmado."),
+        risk=str(proposal.get("risk") or "La derivación requiere aprobación humana antes de persistirse."),
+        requires_approval=True,
+    )
+    compiled_preview = compile_pyspark_expression(column)
+
+    symbol = {"ADD": "+", "SUBTRACT": "-", "MULTIPLY": "*", "DIVIDE": "/"}.get(
+        str(transformation.parameters.get("operator") or "").upper()
+    )
+    if transformation.type == TransformationType.ARITHMETIC and len(source_columns) == 2 and symbol:
+        interpretation = (
+            f"Entendí tu regla así: {target_column} = "
+            f"{source_columns[0]} {symbol} {source_columns[1]}."
+        )
+    else:
+        interpretation = (
+            f"Entendí tu regla así: {target_column} se derivará con "
+            f"{transformation.type.value} usando {', '.join(source_columns)}."
+        )
+
+    normalized = {
+        "source_column": source_columns[0] if source_columns else None,
+        "source_columns": source_columns,
+        "target_column": target_column,
+        "target_type": target_type,
+        "nullable": column.nullable,
+        "include": True,
+        "transformation": transformation.model_dump(mode="json"),
+        "derivation_mode": "DERIVED_NL",
+        "natural_rule": natural_rule,
+        "confidence": column.confidence,
+        "reason": column.reason,
+        "risk": column.risk,
+        "requires_approval": True,
+    }
+    return {
+        "valid": True,
+        "proposal": normalized,
+        "interpretation": interpretation,
+        "compiled_preview": compiled_preview,
+        "human_confirmation_required": True,
+        "policy": "La propuesta no se persiste hasta confirmación humana explícita.",
     }
 
 

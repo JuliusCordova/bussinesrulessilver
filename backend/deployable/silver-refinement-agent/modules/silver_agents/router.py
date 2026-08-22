@@ -20,7 +20,12 @@ from .governance_repository import AgentGovernanceRepository
 from .models import AgentDescriptor, AgentRunRequest, AgentRunResponse
 from .profile_report import ProfileReportService
 from .service import SilverAgentRunner
-from .tools import profile_selected_table, quality_rule_evidence, recommend_column_mappings
+from .tools import (
+    profile_selected_table,
+    quality_rule_evidence,
+    recommend_column_mappings,
+    validate_derived_nl_mapping_proposal,
+)
 
 
 router = APIRouter(prefix="/silver-agents", tags=["silver-agents"])
@@ -45,7 +50,7 @@ _PURPOSES = {
 
 _TOOLS = {
     "table-profiler": ["profile_selected_table"],
-    "mapping-advisor": ["profile_selected_table", "recommend_column_mappings"],
+    "mapping-advisor": ["profile_selected_table", "recommend_column_mappings", "validate_derived_nl_mapping_proposal"],
     "quality-rule-advisor": [
         "profile_selected_table",
         "quality_rule_evidence",
@@ -148,10 +153,26 @@ async def run_silver_agent(
             if agent_name == "table-profiler":
                 result.evidence = profile
             elif agent_name == "mapping-advisor":
-                result.evidence = recommend_column_mappings(
-                    json.dumps(request.columns, ensure_ascii=False),
-                    json.dumps(profile, ensure_ascii=False),
-                )
+                context = (request.context or "").strip()
+                if context.startswith("DERIVED_NL:"):
+                    natural_rule = context.split(":", 1)[1].strip()
+                    cleaned = result.output.strip()
+                    if cleaned.startswith("```"):
+                        cleaned = cleaned.replace("```json", "", 1).replace("```", "", 1).strip()
+                    parsed = json.loads(cleaned)
+                    if not isinstance(parsed, dict):
+                        raise ValueError("El mapping-advisor no devolvió un objeto JSON DERIVED_NL")
+                    candidate = parsed.get("proposal") if isinstance(parsed.get("proposal"), dict) else parsed
+                    result.evidence = validate_derived_nl_mapping_proposal(
+                        json.dumps(request.columns, ensure_ascii=False),
+                        natural_rule,
+                        json.dumps(candidate, ensure_ascii=False),
+                    )
+                else:
+                    result.evidence = recommend_column_mappings(
+                        json.dumps(request.columns, ensure_ascii=False),
+                        json.dumps(profile, ensure_ascii=False),
+                    )
             else:
                 result.evidence = quality_rule_evidence(
                     json.dumps(profile, ensure_ascii=False),

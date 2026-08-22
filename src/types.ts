@@ -52,7 +52,7 @@ export interface WorkflowState {
   inferenceReasons?: string[];
   profileReportUrl?: string;
   mappingRules?: MappingRule[];
-  mappingSource?: 'DIRECT' | 'DETERMINISTIC' | 'AGENT' | 'USER';
+  mappingSource?: 'DIRECT' | 'DETERMINISTIC' | 'AGENT' | 'USER' | 'DERIVED_NL';
   agentProfile?: Record<string, unknown>;
   qualityRuleProposals?: Array<Record<string, unknown>>;
   approvedQualityRules?: Array<Record<string, unknown>>;

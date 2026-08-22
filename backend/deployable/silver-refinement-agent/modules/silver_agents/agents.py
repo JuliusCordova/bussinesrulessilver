@@ -9,6 +9,7 @@ from .tools import (
     build_notebook_blueprint,
     profile_selected_table,
     recommend_column_mappings,
+    validate_derived_nl_mapping_proposal,
     quality_rule_evidence,
     validate_business_rules,
 )
@@ -69,12 +70,15 @@ def build_mapping_advisor_agent() -> LlmAgent:
         description="Recomienda mapping editable desde el schema real y perfil BigQuery.",
         instruction=(
             "Solicitud gobernada: {request_json}. Perfil: {table_profile?}. "
-            "Usa recommend_column_mappings con las columnas reales de la solicitud. "
-            "No inventes columnas ni expresiones. Conserva source, target, tipo, "
-            "transformacion, confianza, razon y riesgo. Toda recomendacion queda "
-            "PENDING_APPROVAL. Devuelve exclusivamente JSON valido."
+            "Si context comienza con DERIVED_NL:, interpreta exactamente una derivación "
+            "usando solo columnas reales. No generes SQL, Python, PySpark ni expresiones libres. "
+            "Construye únicamente un contrato transformation estructurado y llama siempre "
+            "validate_derived_nl_mapping_proposal con columns_json, la regla natural exacta y "
+            "proposal_json. Devuelve exclusivamente el JSON retornado por esa tool. "
+            "Para solicitudes normales usa recommend_column_mappings. Toda recomendación queda "
+            "PENDING_APPROVAL y requiere confirmación humana."
         ),
-        tools=[recommend_column_mappings],
+        tools=[recommend_column_mappings, validate_derived_nl_mapping_proposal],
         output_key="mapping_recommendations",
         **_telemetry("mapping-advisor", model),
     )

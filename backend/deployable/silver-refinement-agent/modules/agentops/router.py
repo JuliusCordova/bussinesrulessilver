@@ -19,6 +19,13 @@ from .models import (
     ExecutionTimelineResponse,
 )
 from .repository import AgentOpsRepository
+from .quality_observability import (
+    QualityEvidenceNotFoundError,
+    QualityExecutionEvidence,
+    QualityExecutionListResponse,
+    QualityObservabilityRepository,
+    QualitySummaryResponse,
+)
 from .service import (
     AgentOpsService,
     ExecutionLogsUnavailableError,
@@ -44,6 +51,10 @@ def get_alert_service() -> AgentOpsAlertService:
 
 def get_agent_governance_repository() -> AgentGovernanceRepository:
     return AgentGovernanceRepository()
+
+
+def get_quality_observability_repository() -> QualityObservabilityRepository:
+    return QualityObservabilityRepository()
 
 
 @router.get("/governance/summary")
@@ -75,6 +86,61 @@ def get_agent_governance_runs(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"No fue posible obtener historial agéntico: {exc}",
+        ) from exc
+
+
+@router.get("/quality/summary", response_model=QualitySummaryResponse)
+def get_quality_summary(
+    repository: QualityObservabilityRepository = Depends(
+        get_quality_observability_repository
+    ),
+) -> QualitySummaryResponse:
+    try:
+        return repository.fetch_summary()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No fue posible obtener el resumen de calidad runtime: {exc}",
+        ) from exc
+
+
+@router.get("/quality/executions", response_model=QualityExecutionListResponse)
+def get_quality_executions(
+    limit: int = Query(default=50, ge=1, le=200),
+    repository: QualityObservabilityRepository = Depends(
+        get_quality_observability_repository
+    ),
+) -> QualityExecutionListResponse:
+    try:
+        return repository.list_latest(limit=limit)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No fue posible obtener evidencia de calidad runtime: {exc}",
+        ) from exc
+
+
+@router.get(
+    "/quality/executions/{execution_id}",
+    response_model=QualityExecutionEvidence,
+)
+def get_quality_execution(
+    execution_id: str,
+    repository: QualityObservabilityRepository = Depends(
+        get_quality_observability_repository
+    ),
+) -> QualityExecutionEvidence:
+    try:
+        return repository.get_latest(execution_id)
+    except QualityEvidenceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No fue posible obtener la evidencia de calidad runtime: {exc}",
         ) from exc
 
 

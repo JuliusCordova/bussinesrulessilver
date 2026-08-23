@@ -2110,10 +2110,58 @@ function RulesStep({
   const [warningThreshold, setWarningThreshold] = useState(0);
   const [criticalThreshold, setCriticalThreshold] = useState(1);
   const [qualityNlIntent, setQualityNlIntent] = useState('');
+  const [allowedValuesText, setAllowedValuesText] = useState('');
+  const [rangeMin, setRangeMin] = useState('');
+  const [rangeMax, setRangeMax] = useState('');
+  const [regexPattern, setRegexPattern] = useState('');
+
+  const selectedColumnType = String(columns.find((column) => column.name === manualColumn)?.type ?? '').toUpperCase();
+  const numericQualityTypes = new Set(['INT64', 'INTEGER', 'FLOAT64', 'FLOAT', 'NUMERIC', 'BIGNUMERIC', 'DECIMAL']);
+  const stringQualityTypes = new Set(['STRING', 'BYTES']);
+
+  function manualParameters(): Record<string, unknown> {
+    if (manualType === 'ALLOWED_VALUES') {
+      return {
+        allowed_values: allowedValuesText
+          .split(/[,\n]/)
+          .map((value) => value.trim())
+          .filter(Boolean),
+      };
+    }
+    if (manualType === 'VALUE_RANGE') {
+      return {
+        ...(rangeMin.trim() ? { min: Number(rangeMin) } : {}),
+        ...(rangeMax.trim() ? { max: Number(rangeMax) } : {}),
+      };
+    }
+    if (manualType === 'REGEX') {
+      return { pattern: regexPattern.trim() };
+    }
+    return {};
+  }
+
+  function manualParameterError(): string | undefined {
+    if (manualType === 'ALLOWED_VALUES' && !allowedValuesText.split(/[,\n]/).map((v) => v.trim()).filter(Boolean).length) {
+      return 'ALLOWED_VALUES requiere al menos un valor permitido.';
+    }
+    if (manualType === 'VALUE_RANGE') {
+      if (!numericQualityTypes.has(selectedColumnType)) return 'VALUE_RANGE solo admite columnas numéricas.';
+      if (!rangeMin.trim() && !rangeMax.trim()) return 'VALUE_RANGE requiere mínimo y/o máximo.';
+      if (rangeMin.trim() && rangeMax.trim() && Number(rangeMin) > Number(rangeMax)) return 'VALUE_RANGE requiere mínimo <= máximo.';
+    }
+    if (manualType === 'REGEX') {
+      if (!stringQualityTypes.has(selectedColumnType)) return 'REGEX solo admite columnas STRING/BYTES.';
+      if (!regexPattern.trim()) return 'REGEX requiere un patrón.';
+    }
+    return undefined;
+  }
+
+  const parameterError = manualParameterError();
 
   function addManual() {
     if (!manualColumn) return;
     if (criticalThreshold < warningThreshold) return;
+    if (parameterError) return;
     const ruleName = `${manualColumn}_${manualType.toLowerCase()}`;
     onAddManualRule({
       rule_id: `qr_manual_${ruleName}`,
@@ -2122,7 +2170,7 @@ function RulesStep({
       dimension: manualDimension,
       rule_type: manualType,
       columns: [manualColumn],
-      parameters: {},
+      parameters: manualParameters(),
       warning_threshold: warningThreshold,
       critical_threshold: criticalThreshold,
       severity: manualSeverity,
@@ -2186,7 +2234,12 @@ function RulesStep({
 
       <div className="formGrid three">
         <ContractSelectField label="Tipo de regla" value={manualType}
-          options={['NOT_NULL', 'UNIQUE', 'ALLOWED_VALUES', 'VALUE_RANGE', 'REGEX']} onChange={setManualType} />
+          options={['NOT_NULL', 'UNIQUE', 'ALLOWED_VALUES', 'VALUE_RANGE', 'REGEX']} onChange={(value) => {
+            setManualType(value);
+            if (value === 'NOT_NULL') { setManualDimension('COMPLETENESS'); setManualAction('BLOCK_LOAD'); }
+            else if (value === 'UNIQUE') { setManualDimension('UNIQUENESS'); setManualAction('BLOCK_LOAD'); }
+            else { setManualDimension('VALIDITY'); setManualAction('WARN'); }
+          }} />
         <ContractSelectField label="Dimensión" value={manualDimension}
           options={['COMPLETENESS', 'UNIQUENESS', 'VALIDITY', 'CONSISTENCY', 'REFERENTIAL', 'TIMELINESS', 'AGGREGATE', 'BUSINESS']}
           onChange={(value) => setManualDimension(value as QualityDimension)} />
@@ -2202,8 +2255,48 @@ function RulesStep({
         <label className="field"><span>Critical threshold</span><input type="number" min="0" value={criticalThreshold}
           onChange={(event) => setCriticalThreshold(Number(event.target.value))} /></label>
       </div>
-      <div className="actions"><button onClick={addManual}>Agregar regla manual</button></div>
+
+      {manualType === 'ALLOWED_VALUES' && (
+        <div className="validationBox">
+          <strong>Parámetros · Valores permitidos</strong>
+          <label className="field">
+            <span>Valores (separados por coma o una línea por valor)</span>
+            <textarea rows={3} value={allowedValuesText} onChange={(event) => setAllowedValuesText(event.target.value)}
+              placeholder="ACTIVO, INACTIVO, SUSPENDIDO" />
+          </label>
+          <small>Se persistirá como parameters.allowed_values.</small>
+        </div>
+      )}
+
+      {manualType === 'VALUE_RANGE' && (
+        <div className="validationBox">
+          <strong>Parámetros · Rango de valores</strong>
+          <div className="formGrid three">
+            <label className="field"><span>Mínimo</span><input type="number" value={rangeMin}
+              onChange={(event) => setRangeMin(event.target.value)} placeholder="0" /></label>
+            <label className="field"><span>Máximo</span><input type="number" value={rangeMax}
+              onChange={(event) => setRangeMax(event.target.value)} placeholder="100000" /></label>
+            <Field label="Tipo columna" value={selectedColumnType || 'N/A'} />
+          </div>
+          <small>Puedes indicar solo mínimo, solo máximo o ambos. Se persistirá como parameters.min / parameters.max.</small>
+        </div>
+      )}
+
+      {manualType === 'REGEX' && (
+        <div className="validationBox">
+          <strong>Parámetros · Expresión regular</strong>
+          <label className="field">
+            <span>Patrón REGEX</span>
+            <input value={regexPattern} onChange={(event) => setRegexPattern(event.target.value)}
+              placeholder="^[A-Z]{3}-[0-9]{6}$" />
+          </label>
+          <small>Se persistirá como parameters.pattern. La regla solo es válida para columnas STRING/BYTES.</small>
+        </div>
+      )}
+
+      <div className="actions"><button onClick={addManual} disabled={Boolean(parameterError) || criticalThreshold < warningThreshold}>Agregar regla manual</button></div>
       {criticalThreshold < warningThreshold && <small className="riskText">Critical threshold debe ser mayor o igual que warning.</small>}
+      {parameterError && <small className="riskText">{parameterError}</small>}
 
       {proposals.length ? (
         <div className="agentRuleList">
@@ -2248,6 +2341,9 @@ function RulesStep({
               <strong>{rule.dimension} · {rule.name}</strong>
               <span>{rule.rule_type} sobre {rule.columns.join(', ') || 'nivel tabla'} · {rule.severity}</span>
               <small>Gate: {rule.runtime_action} · Warning {rule.warning_threshold} · Critical {rule.critical_threshold} · Origen {rule.source}</small>
+              {Object.keys(rule.parameters ?? {}).length > 0 && (
+                <small>Parámetros: {JSON.stringify(rule.parameters)}</small>
+              )}
               <button className="dangerText" onClick={() => onRemoveRule(rule.rule_id)}>Quitar</button>
             </article>
           ))}

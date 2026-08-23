@@ -1186,7 +1186,7 @@ export function App({ initialWorkflow }: { initialWorkflow?: WorkflowState }) {
           />
         )}
         {workflow.activeStep === 'governance' && (
-          <GovernanceStep />
+          <GovernanceIntegratedStep />
         )}
       </main>
 
@@ -2533,6 +2533,44 @@ function ExecutionStep({
 }
 
 
+
+
+function GovernanceIntegratedStep() {
+  const [frameKey, setFrameKey] = useState(0);
+  const governancePath = '/governance-dashboard/index.html#view/overview';
+
+  return (
+    <section className="governanceIntegratedShell">
+      <div className="governanceIntegratedHeader">
+        <div>
+          <span className="resultEyebrow">GOBIERNO DATAOPS · PRODUCCIÓN</span>
+          <h2>Control Center de Gobierno</h2>
+          <p>
+            Dashboard unificado de AgentOps, FinOps IA, calidad runtime, agentes,
+            ejecuciones, salud, artefactos y alertas usando evidencia productiva.
+          </p>
+        </div>
+        <div className="actions">
+          <button onClick={() => setFrameKey((value) => value + 1)}>Actualizar dashboard</button>
+          <a className="primary governanceOpenButton" href={governancePath} target="_blank" rel="noreferrer">
+            Abrir vista completa
+          </a>
+        </div>
+      </div>
+      <div className="governanceIntegratedFrameWrap">
+        <iframe
+          key={frameKey}
+          className="governanceIntegratedFrame"
+          title="Gobierno DataOps Business Rules Silver"
+          src={governancePath}
+        />
+      </div>
+      <small className="governanceIntegratedNote">
+        La vista está empaquetada dentro del mismo frontend productivo; no depende del servicio preview separado.
+      </small>
+    </section>
+  );
+}
 
 function GovernanceStep() {
   const [dashboard, setDashboard] = useState<AgentOpsDashboard | null>(null);

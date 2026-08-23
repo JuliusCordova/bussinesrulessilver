@@ -105,12 +105,13 @@ export function ProductRoot() {
 
   const statuses = Array.from(new Set(workflows.map((workflow) => workflow.status)));
 
-  async function openProcess(workflowId: string) {
+  async function openProcess(workflowId: string, requestedStep?: WorkflowState['activeStep']) {
     setLoading(true);
     setError(undefined);
     try {
       const latest = await silverApi.getWorkflow(workflowId);
       const hydrated = hydrateWorkflowForResume(latest);
+      if (requestedStep) hydrated.activeStep = requestedStep;
       if (latest.spec_id) {
         try {
           const artifacts = await silverApi.listArtifacts(latest.spec_id);
@@ -140,6 +141,31 @@ export function ProductRoot() {
   function startNewProcess() {
     setResumeWorkflow(undefined);
     setMode('wizard');
+  }
+
+  function executionState(workflow: SilverWorkflowRecord) {
+    const execution = workflow.execution && typeof workflow.execution === 'object'
+      ? workflow.execution as Record<string, unknown>
+      : undefined;
+    return typeof execution?.status === 'string' ? execution.status.toUpperCase() : undefined;
+  }
+
+  function nextOperationalStep(workflow: SilverWorkflowRecord): WorkflowState['activeStep'] {
+    if (workflow.execution_id || workflow.execution) return 'execution';
+    if (workflow.artifact_package || workflow.spec_id || workflow.quality_review) return 'artifacts';
+    if ((workflow.quality_rules?.length ?? 0) > 0 || (workflow.business_rules?.rules?.length ?? 0) > 0) return 'rules';
+    if ((workflow.mapping_rules?.length ?? 0) > 0 || workflow.mapping_version) return 'mapping';
+    return workflow.source_confirmed ? 'incremental' : 'source';
+  }
+
+  function launchLabel(workflow: SilverWorkflowRecord) {
+    const state = executionState(workflow);
+    if (state === 'VALIDATED') return 'Listo para lanzar';
+    if (state === 'QUEUED' || state === 'RUNNING') return 'En ejecución';
+    if (state === 'SUCCEEDED') return 'Ejecutado';
+    if (state === 'FAILED') return 'Revisar fallo';
+    if (workflow.artifact_package || workflow.spec_id) return 'Preparar ejecución';
+    return 'Diseño pendiente';
   }
 
   async function downloadGovernedPackage(workflow: SilverWorkflowRecord) {
@@ -251,7 +277,7 @@ export function ProductRoot() {
                 <th>Mapping</th>
                 <th>Package</th>
                 <th>Última modificación</th>
-                <th></th>
+                <th>Operación</th>
               </tr>
             </thead>
             <tbody>
@@ -266,7 +292,18 @@ export function ProductRoot() {
                   <td>{workflow.mapping_version ? `v${workflow.mapping_version}` : 'Pendiente'}</td>
                   <td>{packageVersion(workflow)}</td>
                   <td>{formatDate(workflow.updated_at)}</td>
-                  <td><button onClick={() => { setSelected(workflow); setVersionHistory([]); }}>Ver detalle</button></td>
+                  <td>
+                    <div className="processRowActions">
+                      <button onClick={() => { setSelected(workflow); setVersionHistory([]); }}>Ver</button>
+                      <button onClick={() => void openProcess(workflow.workflow_id, 'mapping')}>Editar</button>
+                      <button
+                        className={executionState(workflow) === 'VALIDATED' ? 'launchReady' : ''}
+                        onClick={() => void openProcess(workflow.workflow_id, nextOperationalStep(workflow))}
+                      >
+                        {launchLabel(workflow)}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
               {!loading && filtered.length === 0 && (
@@ -295,7 +332,26 @@ export function ProductRoot() {
                 <div><dt>Actualizado</dt><dd>{formatDate(selected.updated_at)}</dd></div>
               </dl>
               <div className="processDetailNotice">
-                El proceso se reabrirá usando la versión más reciente persistida en backend.
+                El proceso se reabrirá usando la versión más reciente persistida en backend. La ejecución nunca se dispara desde el catálogo: se abre el paso operativo y requiere confirmación explícita.
+              </div>
+              {!!selected.available_actions?.length && (
+                <div className="availableActions">
+                  <strong>Acciones habilitadas por backend</strong>
+                  <div>{selected.available_actions.map((action) => <span key={action}>{action}</span>)}</div>
+                </div>
+              )}
+              <div className="processOperationalActions">
+                <button onClick={() => void openProcess(selected.workflow_id, 'mapping')}>Editar mapping</button>
+                <button onClick={() => void openProcess(selected.workflow_id, 'rules')}>Editar reglas</button>
+                <button disabled={!selected.spec_id && !selected.artifact_package} onClick={() => void openProcess(selected.workflow_id, 'artifacts')}>Package & versiones</button>
+                <button
+                  className={executionState(selected) === 'VALIDATED' ? 'primaryProcessAction' : ''}
+                  disabled={!selected.spec_id && !selected.execution_id && !selected.artifact_package}
+                  onClick={() => void openProcess(selected.workflow_id, nextOperationalStep(selected))}
+                >
+                  {launchLabel(selected)}
+                </button>
+                <button onClick={() => void openProcess(selected.workflow_id, 'governance')}>Gobierno</button>
               </div>
               <div className="processHistoryActions">
                 <button

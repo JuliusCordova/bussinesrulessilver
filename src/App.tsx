@@ -2377,6 +2377,9 @@ function ArtifactsStep({
         artifact_name: artifactType,
         generation_status: 'PENDING',
       }));
+  const packageArtifact = generated.find((artifact) =>
+    /zip|package/i.test(`${artifact.artifact_type ?? ''} ${artifact.artifact_name ?? ''}`),
+  );
 
   return (
     <section className="card">
@@ -2409,6 +2412,32 @@ function ArtifactsStep({
             : 'Revisa y aprueba las reglas antes de crear artefactos.'}
         </span>
       </div>
+
+      <section className="packageDownloadPanel">
+        <div>
+          <span className="resultEyebrow">Paquete ejecutable gobernado</span>
+          <h3>{packageArtifact ? 'Package ZIP listo para descargar' : 'Package ZIP pendiente'}</h3>
+          <p>
+            Descarga el paquete exacto que será validado y enviado a Dataproc.
+            Incluye los artefactos versionados de este workflow.
+          </p>
+          <small>
+            Versión: {workflow.packageVersion ? `v${workflow.packageVersion}` : 'Pendiente'} ·{' '}
+            Hash: {packageArtifact?.content_hash ?? 'Pendiente'}
+          </small>
+          <small title={packageArtifact?.storage_uri ?? undefined}>
+            Storage: {packageArtifact?.storage_uri ?? 'Pendiente'}
+          </small>
+        </div>
+        <button
+          className="primary"
+          disabled={!packageArtifact}
+          onClick={() => packageArtifact && onDownload(packageArtifact)}
+        >
+          Descargar paquete ZIP
+        </button>
+      </section>
+
       <div className="resultMetrics">
         <article><span>Workflow</span><strong>v{workflow.version ?? 1}</strong></article>
         <article><span>Mapping</span><strong>v{workflow.mappingVersion ?? 1}</strong></article>

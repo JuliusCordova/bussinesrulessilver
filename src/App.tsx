@@ -2114,6 +2114,12 @@ function RulesStep({
   const [rangeMin, setRangeMin] = useState('');
   const [rangeMax, setRangeMax] = useState('');
   const [regexPattern, setRegexPattern] = useState('');
+  const [ruleMode, setRuleMode] = useState<'BUILDER' | 'SRL'>('BUILDER');
+  const [srlText, setSrlText] = useState('CHECK ramo_id NOT_NULL\nON_FAIL BLOCK_LOAD');
+  const [srlPreview, setSrlPreview] = useState<GovernedQualityRule | null>(null);
+  const [srlNormalized, setSrlNormalized] = useState('');
+  const [srlError, setSrlError] = useState('');
+  const [srlLoading, setSrlLoading] = useState(false);
 
   const selectedColumnType = String(columns.find((column) => column.name === manualColumn)?.type ?? '').toUpperCase();
   const numericQualityTypes = new Set(['INT64', 'INTEGER', 'FLOAT64', 'FLOAT', 'NUMERIC', 'BIGNUMERIC', 'DECIMAL']);
@@ -2157,6 +2163,43 @@ function RulesStep({
   }
 
   const parameterError = manualParameterError();
+
+  async function validateSrlRule() {
+    setSrlLoading(true);
+    setSrlError('');
+    setSrlPreview(null);
+    try {
+      const result = await silverApi.validateSrl({
+        srl: srlText,
+        schema: columns.map((column) => ({ name: column.name, type: column.type })),
+      });
+      const contract = result.governed_contract as GovernedQualityRule;
+      setSrlPreview(contract);
+      setSrlNormalized(result.normalized_srl);
+    } catch (error) {
+      setSrlNormalized('');
+      setSrlError(normalizeError(error).summary);
+    } finally {
+      setSrlLoading(false);
+    }
+  }
+
+  function addValidatedSrlRule() {
+    if (!srlPreview) return;
+    onAddManualRule({
+      ...srlPreview,
+      source: 'MANUAL',
+      status: 'PENDING_APPROVAL',
+      active: true,
+      metadata: {
+        ...(srlPreview.metadata ?? {}),
+        creation_mode: 'SRL',
+        normalized_srl: srlNormalized,
+      },
+    });
+    setSrlPreview(null);
+    setSrlNormalized('');
+  }
 
   function addManual() {
     if (!manualColumn) return;
@@ -2206,31 +2249,56 @@ function RulesStep({
       </div>
 
       <div className="validationBox">
-        <strong>Regla en lenguaje natural</strong>
-        <label className="field">
-          <span>Describe la regla que quieres controlar</span>
-          <textarea
-            rows={3}
-            value={qualityNlIntent}
-            placeholder="Ejemplo: monto_total debe estar entre 0 y 100000"
-            onChange={(event) => setQualityNlIntent(event.target.value)}
-          />
-        </label>
+        <strong>Crear regla de calidad</strong>
+        <span>Primero estabilizamos dos caminos determinísticos. La IA se conectará después como traductor hacia SRL.</span>
         <div className="actions">
-          <button onClick={() => onGenerateQualityNl(qualityNlIntent)}>Interpretar regla con AI</button>
+          <button className={ruleMode === 'BUILDER' ? 'primary' : ''} onClick={() => setRuleMode('BUILDER')}>Constructor visual</button>
+          <button className={ruleMode === 'SRL' ? 'primary' : ''} onClick={() => setRuleMode('SRL')}>Pseudocódigo SRL</button>
         </div>
-        {qualityNlProposal && (
-          <article className="checkOk">
-            <strong>{qualityNlInterpretation ?? 'Entendí tu regla así:'}</strong>
-            <span>{qualityNlProposal.dimension} · {qualityNlProposal.rule_type} · {qualityNlProposal.columns.join(', ')}</span>
-            <small>Gate {qualityNlProposal.runtime_action} · Origen DERIVED_NL · Estado PENDING_APPROVAL</small>
-            <div className="actions">
-              <button className="primary" onClick={() => { onConfirmQualityNl(); setQualityNlIntent(''); }}>Confirmar regla interpretada</button>
-            </div>
-          </article>
-        )}
-        <small>El texto natural es evidencia de intención; solo el contrato estructurado validado puede aprobarse.</small>
       </div>
+
+      {ruleMode === 'SRL' && (
+        <div className="validationBox">
+          <strong>Silver Rule Language · CHECK</strong>
+          <label className="field">
+            <span>Regla SRL</span>
+            <textarea
+              rows={5}
+              value={srlText}
+              onChange={(event) => { setSrlText(event.target.value); setSrlPreview(null); setSrlError(''); }}
+              placeholder={'CHECK moneda IN ["PEN", "USD"]\nON_FAIL WARN'}
+            />
+          </label>
+          <small>Operadores v1.0: NOT_NULL · UNIQUE · IN · BETWEEN · MATCHES. ON_FAIL es obligatorio.</small>
+          <div className="actions">
+            <button className="primary" disabled={!srlText.trim() || srlLoading} onClick={() => void validateSrlRule()}>
+              {srlLoading ? 'Validando...' : 'Validar SRL'}
+            </button>
+            <button onClick={() => setSrlText('CHECK ramo_id NOT_NULL\nON_FAIL BLOCK_LOAD')}>Ejemplo NOT_NULL</button>
+            <button onClick={() => setSrlText('CHECK moneda IN ["PEN", "USD"]\nON_FAIL WARN')}>Ejemplo IN</button>
+          </div>
+          {srlError && <small className="riskText">{srlError}</small>}
+          {srlPreview && (
+            <article className="checkOk">
+              <strong>SRL válida · lista para agregar</strong>
+              <span>{srlNormalized}</span>
+              <small>{srlPreview.dimension} · {srlPreview.rule_type} · {srlPreview.columns.join(', ')}</small>
+              <small>Gate {srlPreview.runtime_action} · Estado {srlPreview.status}</small>
+              {Object.keys(srlPreview.parameters ?? {}).length > 0 && <small>Parámetros: {JSON.stringify(srlPreview.parameters)}</small>}
+              <div className="actions">
+                <button className="primary" onClick={addValidatedSrlRule}>Agregar regla validada</button>
+              </div>
+            </article>
+          )}
+        </div>
+      )}
+
+      {ruleMode === 'BUILDER' && (
+        <div className="validationBox">
+          <strong>Constructor visual determinístico</strong>
+          <span>Selecciona el contrato; los parámetros aparecen según el tipo de regla.</span>
+        </div>
+      )}
 
       <div className="formGrid three">
         <ContractSelectField label="Tipo de regla" value={manualType}

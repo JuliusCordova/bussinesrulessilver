@@ -175,6 +175,12 @@ export const silverApi = {
       body: JSON.stringify(payload),
     }),
 
+  validateSrl: (payload: SrlValidationRequest) =>
+    request<SrlValidationResponse>('/silver-rules/validate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   generateTableProfileReport: (payload: SilverAgentRunRequest) =>
     requestBlob('/silver-agents/table-profiler/report', {
       method: 'POST',
@@ -240,6 +246,19 @@ export interface SilverAgentRunResponse {
   output: string;
   events: number;
   evidence?: Record<string, unknown> | null;
+}
+
+export interface SrlValidationRequest {
+  srl: string;
+  schema: Array<{ name: string; type: string }>;
+}
+
+export interface SrlValidationResponse {
+  valid: boolean;
+  srl_version: string;
+  normalized_srl: string;
+  ast: Record<string, unknown>;
+  governed_contract: GovernedQualityRule | Record<string, unknown>;
 }
 
 export interface SilverSourceReference {

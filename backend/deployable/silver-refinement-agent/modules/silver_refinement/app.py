@@ -18,6 +18,7 @@ from modules.multi_agent.router import router as multi_agent_router
 from modules.platform_availability.router import router as platform_availability_router
 from modules.silver_agents.router import router as silver_agents_router
 from modules.silver_execution.execution_router import router as execution_router
+from modules.silver_rules.router import router as silver_rules_router
 from modules.silver_workflow.router import router as silver_workflow_router
 
 from .artifact_router import router as artifact_router
@@ -38,6 +39,7 @@ app.include_router(artifact_router)
 app.include_router(silver_workflow_router)
 app.include_router(execution_router)
 app.include_router(silver_agents_router)
+app.include_router(silver_rules_router)
 app.include_router(agentops_router)
 app.include_router(finops_router)
 app.include_router(governance_router)

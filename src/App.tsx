@@ -2274,6 +2274,14 @@ function RulesStep({
             <button className="primary" disabled={!srlText.trim() || srlLoading} onClick={() => void validateSrlRule()}>
               {srlLoading ? 'Validando...' : 'Validar SRL'}
             </button>
+            <button
+              className={srlPreview ? 'primary' : ''}
+              disabled={!srlPreview || srlLoading}
+              onClick={addValidatedSrlRule}
+              title={srlPreview ? 'Agregar contrato SRL validado' : 'Primero valida la regla SRL'}
+            >
+              Agregar regla SRL
+            </button>
             <button onClick={() => setSrlText('CHECK ramo_id NOT_NULL\nON_FAIL BLOCK_LOAD')}>Ejemplo NOT_NULL</button>
             <button onClick={() => setSrlText('CHECK moneda IN ["PEN", "USD"]\nON_FAIL WARN')}>Ejemplo IN</button>
           </div>
@@ -2285,9 +2293,7 @@ function RulesStep({
               <small>{srlPreview.dimension} · {srlPreview.rule_type} · {srlPreview.columns.join(', ')}</small>
               <small>Gate {srlPreview.runtime_action} · Estado {srlPreview.status}</small>
               {Object.keys(srlPreview.parameters ?? {}).length > 0 && <small>Parámetros: {JSON.stringify(srlPreview.parameters)}</small>}
-              <div className="actions">
-                <button className="primary" onClick={addValidatedSrlRule}>Agregar regla validada</button>
-              </div>
+
             </article>
           )}
         </div>

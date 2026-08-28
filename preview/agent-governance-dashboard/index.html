@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Preview interactivo e independiente del control plane de Gobierno de Agentes Google ADK." />
+  <title>Gobierno de Agentes — Google ADK</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">AG</div>
+        <div><strong>Agent Governance</strong><span>Google ADK</span></div>
+      </div>
+      <nav class="nav" aria-label="Navegación de Gobierno de Agentes">
+        <button class="nav-item active" type="button" data-scroll-target="#executive"><span>◫</span>Resumen ejecutivo</button>
+        <button class="nav-item" type="button" data-scroll-target="#agents"><span>◇</span>Agentes</button>
+        <button class="nav-item" type="button" data-scroll-target="#risk"><span>◉</span>Riesgo & autonomía</button>
+        <button class="nav-item" type="button" data-scroll-target="#findings"><span>!</span>Hallazgos</button>
+        <button class="nav-item" type="button" data-scroll-target="#policies"><span>✓</span>Políticas & controles</button>
+        <button class="nav-item" type="button" data-scroll-target="#deployments"><span>↻</span>Deployments</button>
+        <button class="nav-item" type="button" data-scroll-target="#architecture"><span>⌘</span>Modelo de gobierno</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="environment-card"><span>Ambiente</span><strong><i></i> Preview independiente</strong><small>No modifica runtimes ADK</small></div>
+        <div class="version-card"><span>Fuente</span><strong>Agent Platform + ATLAS</strong><small id="backendVersion">Consultando API...</small></div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar" id="executive">
+        <div>
+          <div class="eyebrow">Google ADK + ATLAS Governance · Control plane out-of-band</div>
+          <h1>Gobierno de Agentes — Google ADK</h1>
+          <p>¿Cuántos agentes tenemos, quién responde por ellos, qué riesgo tienen y cuáles están realmente gobernados?</p>
+        </div>
+        <div class="top-actions">
+          <div class="environment-pill"><span></span> Preview interactivo</div>
+          <button id="refreshButton" class="primary-button" type="button">Actualizar inventario</button>
+        </div>
+      </header>
+
+      <div id="errorBanner" class="error-banner hidden" role="alert"></div>
+
+      <section class="kpi-grid" aria-label="Indicadores ejecutivos de Gobierno de Agentes">
+        <button class="kpi-card violet" type="button" data-kpi-detail="agents"><div class="kpi-icon">◇</div><div><span>Agentes bajo gobierno</span><strong id="kpiAgents">—</strong><small id="kpiAgentsHint">Identidades lógicas registradas</small></div><em>Ver agentes →</em></button>
+        <button class="kpi-card green" type="button" data-kpi-detail="governed"><div class="kpi-icon">✓</div><div><span>Gobernados conformes</span><strong id="kpiGoverned">—</strong><small>Assessment determinístico conforme</small></div><em>Ver cobertura →</em></button>
+        <button class="kpi-card amber" type="button" data-kpi-detail="action"><div class="kpi-icon">!</div><div><span>Requieren acción</span><strong id="kpiAction">—</strong><small>Brechas de gobierno por resolver</small></div><em>Ver hallazgos →</em></button>
+        <button class="kpi-card purple" type="button" data-kpi-detail="risk"><div class="kpi-icon">◉</div><div><span>Riesgo alto</span><strong id="kpiRisk">—</strong><small>High + Critical</small></div><em>Ver riesgo →</em></button>
+        <button class="kpi-card cyan" type="button" data-kpi-detail="findings"><div class="kpi-icon">▣</div><div><span>Hallazgos abiertos</span><strong id="kpiFindings">—</strong><small>Controles pendientes o incumplidos</small></div><em>Ver hallazgos →</em></button>
+        <button class="kpi-card blue" type="button" data-kpi-detail="deployments"><div class="kpi-icon">↻</div><div><span>Versiones técnicas detectadas</span><strong id="kpiDeployments">—</strong><small id="kpiDeploymentsHint">Deployments ADK observados</small></div><em>Ver detalle técnico →</em></button>
+      </section>
+
+      <section class="dashboard-grid top-grid" id="risk">
+        <article class="panel trend-panel">
+          <div class="panel-header"><div><h2>Estado de gobierno</h2><p>Distribución de las identidades lógicas registradas</p></div><span class="live-badge">● LIVE</span></div>
+          <div class="donut-layout"><div id="governanceDonut" class="donut"><div><strong id="governanceTotal">—</strong><span>agentes</span></div></div><div id="governanceLegend" class="status-legend"></div></div>
+        </article>
+        <article class="panel top-agents-panel"><div class="panel-header"><div><h2>Riesgo del estate</h2><p>Distribución por clasificación de riesgo declarada</p></div><span id="riskBadge" class="soft-badge">— evaluados</span></div><div id="riskDistribution" class="top-agents"></div></article>
+        <article class="panel execution-state-panel"><div class="panel-header"><div><h2>Autonomía declarada</h2><p>L0 informa · L4 actúa con mayor autonomía</p></div></div><div id="autonomyDistribution" class="compact-list"></div></article>
+      </section>
+
+      <section class="dashboard-grid middle-grid" id="agents">
+        <article class="panel history-panel">
+          <div class="panel-header"><div><h2>Registro de agentes gobernados</h2><p>Clic en una fila para ver ownership, riesgo, autonomía, políticas, controles y evidencia</p></div><div class="header-badges"><span id="agentCountBadge" class="soft-badge">— agentes</span><span class="persistence-badge">Gobierno persistente</span></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Agente</th><th>Gobierno</th><th>Business Owner</th><th>Technical Owner</th><th>Riesgo</th><th>Autonomía</th><th>Score</th><th>Deployments</th></tr></thead><tbody id="agentsTable"></tbody></table></div>
+        </article>
+        <aside class="right-stack">
+          <article class="panel alerts-panel" id="findings"><div class="panel-header compact"><div><h2>Hallazgos de gobierno</h2><p>Brechas abiertas y evidencia histórica cerrada</p></div><span id="findingsBadge" class="soft-badge">— abiertos</span></div><div id="findingsList" class="alerts-list"></div></article>
+          <article class="panel health-panel"><div class="panel-header compact"><div><h2>Revisión requerida</h2><p>Estado del assessment y siguiente revisión</p></div><span id="reviewBadge" class="health-status">—</span></div><div id="reviewList" class="health-list"></div></article>
+        </aside>
+      </section>
+
+      <section class="dashboard-grid lower-grid" id="policies">
+        <article class="panel agents-registry-panel"><div class="panel-header"><div><h2>Políticas & controles aplicables</h2><p>Referencias versionadas usadas por el assessment determinístico</p></div><span id="policyBadge" class="soft-badge">— políticas</span></div><div id="policyRegistry" class="agent-registry"></div></article>
+        <article class="panel executions-panel" id="deployments"><div class="panel-header compact"><div><h2>Versiones técnicas detectadas</h2><p>Detalle técnico secundario: Reasoning Engines observados en Google ADK</p></div><span id="deploymentBadge" class="soft-badge">—</span></div><div id="deploymentsList" class="compact-list"></div></article>
+      </section>
+
+      <section class="panel architecture-panel" id="architecture">
+        <div class="panel-header compact"><div><h2>Modelo de Gobierno de Agentes</h2><p>La plataforma descubre deployments; ATLAS gobierna la identidad lógica y su evidencia</p></div><span class="soft-badge">Google Cloud</span></div>
+        <div class="architecture-flow">
+          <div class="architecture-node"><b>ADK</b><strong>Agent Platform</strong><span>Deployments observados</span></div><div class="arrow">→</div>
+          <div class="architecture-node"><b>DISC</b><strong>Discovery</strong><span>Read-only</span></div><div class="arrow">→</div>
+          <div class="architecture-node"><b>ID</b><strong>Agente lógico</strong><span>Identidad gobernada</span></div><div class="arrow">→</div>
+          <div class="architecture-node"><b>POL</b><strong>Políticas</strong><span>Catálogo versionado</span></div><div class="arrow">→</div>
+          <div class="architecture-node"><b>ASM</b><strong>Assessment</strong><span>Determinístico</span></div><div class="arrow">→</div>
+          <div class="architecture-node"><b>EVD</b><strong>Evidencia</strong><span>Findings + historial</span></div>
+        </div>
+      </section>
+
+      <footer class="footer"><span id="lastUpdated">Actualizando...</span><span>Preview independiente basado en el Governance Dashboard canónico de Business Rules Silver</span></footer>
+    </main>
+  </div>
+
+  <div id="drawerBackdrop" class="drawer-backdrop"></div>
+  <aside id="detailDrawer" class="detail-drawer" aria-label="Detalle interactivo" aria-hidden="true">
+    <header class="drawer-header">
+      <div><span id="drawerEyebrow">Detalle</span><h2 id="drawerTitle">Detalle</h2></div>
+      <button id="drawerClose" type="button" aria-label="Cerrar detalle">×</button>
+    </header>
+    <div id="drawerBody" class="drawer-body"></div>
+  </aside>
+
+  <script src="./app.js"></script>
+</body>
+</html>
